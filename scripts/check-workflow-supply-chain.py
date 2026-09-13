@@ -16,6 +16,7 @@ CLIENT_WINDOWS_RUNNER = "windows-2025"
 MAX_TIMEOUT_MINUTES = 30
 MAX_WORKFLOW_BYTES = 1024 * 1024
 PINNED_OFFICIAL_ACTIONS = {
+    "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
     "actions/setup-node": "820762786026740c76f36085b0efc47a31fe5020",
@@ -132,6 +133,9 @@ def matching_job_property(segment: list[Line], pattern: re.Pattern[str]) -> list
 
 
 def validate_job(source: str, header: Line, segment: list[Line]) -> None:
+    is_release_publisher = (
+        source == ".github/workflows/release-build.yml" and header.content == "publish:"
+    )
     runners = matching_job_property(segment, RUNNER_KEY)
     expected_runner = FIXED_RUNNER
     if len(runners) != 1 or runners[0].content != f"runs-on: {expected_runner}":
@@ -176,12 +180,30 @@ def validate_job(source: str, header: Line, segment: list[Line]) -> None:
         len(segment),
     )
     entries = segment[permission_index + 1 : permission_end]
-    if len(entries) != 1 or entries[0].indent != 6 or entries[0].content != "contents: read":
+    expected_permission = "contents: write" if is_release_publisher else "contents: read"
+    if (
+        len(entries) != 1
+        or entries[0].indent != 6
+        or entries[0].content != expected_permission
+    ):
         raise fail(
             source,
             entries[0] if entries else permissions[0],
-            "job permissions must contain only contents: read",
+            f"job permissions must contain only {expected_permission}",
         )
+
+    if is_release_publisher:
+        needs = [
+            line
+            for line in segment
+            if line.indent == 4 and line.content.startswith("needs:")
+        ]
+        if len(needs) != 1 or needs[0].content != "needs: build":
+            raise fail(
+                source,
+                needs[0] if needs else header,
+                "release publisher must depend exactly on the verified build job",
+            )
 
 
 def validate_checkout_credentials(
@@ -339,6 +361,10 @@ jobs:
           persist-credentials: false
 """
     validate_workflow("positive-fixture.yml", base)
+    release_publisher = base.replace(
+        "  test:\n", "  publish:\n    needs: build\n"
+    ).replace("contents: read", "contents: write")
+    validate_workflow(".github/workflows/release-build.yml", release_publisher)
     cases = {
         "floating action": base.replace(
             PINNED_OFFICIAL_ACTIONS["actions/checkout"], "v4"
