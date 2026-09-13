@@ -30,6 +30,12 @@ try {
    });
    await page.goto("http://127.0.0.1:"+server.httpServer.address().port);
    await checkHeaderActions(page, "/sunshine/devices");
+   const menuToFirst=await page.evaluate(()=>{
+    const header=document.querySelector(".sarmg-page-header");const first=[...document.querySelectorAll("h2")].find(node=>node.textContent==="实例");
+    if(!header||!first)throw new Error("Sunshine spacing fixture is incomplete");
+    return first.getBoundingClientRect().top-header.getBoundingClientRect().bottom;
+   });
+   assert.ok(Math.abs(menuToFirst-16)<2,String(menuToFirst));
    await page.getByRole("button",{name:"新建实例",exact:true}).click();
    const dialog=page.getByRole("dialog",{name:"新建 Sunshine 实例"});
    const input=dialog.getByLabel("实例名称",{exact:true});
