@@ -3,8 +3,8 @@ product_id = "sunshine-manager"
 
 [foundation]
 platform_generation = 1
-version = "0.7.6"
-git_rev = "89eafaf171e409e6134fa669b140f615635baf5a"
+version = "0.7.9"
+git_rev = "c4dfbd8c90ecbd0054776ae03a55447ae5986a5f"
 
 [[components]]
 id = "server"

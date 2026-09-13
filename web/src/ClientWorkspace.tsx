@@ -1,9 +1,9 @@
 import { operationLabel, configValueLabel } from "./display-labels";
-import { t } from "../shell/i18n.js";
-import { InstanceNameField } from "../shell/index.js";
+import { t } from "@sarmg/admin-ui/i18n";
+import { InstanceNameField } from "@sarmg/admin-shell";
 import {useEffect,useState,type FormEvent} from "react";
 import {Button,ConfirmDangerDialog,ErrorState,FormField,TextField} from "@sarmg/admin-ui";
-import {useAdminApplication,errorRequestId} from "../shell/index.js";
+import {useAdminApplication,errorRequestId} from "@sarmg/admin-shell";
 import {CURRENT_API_PREFIX,isClientAuthorization,isDevice,isOperation,isOperations,type Command,type DeviceInfo,type Operation,type Snapshot,type Ticket,currentErrorEnvelope} from "./api";
 import {configFields} from "./config-fields";
 import {TicketPanel} from "./DeviceRegistrationDialog";

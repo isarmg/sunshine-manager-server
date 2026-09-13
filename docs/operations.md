@@ -27,7 +27,7 @@ asset 和 group/world writable 内容。
 python3 scripts/package-release.py /absolute/release-output
 ```
 
-当前 Server Rust 固定 Foundation 0.7.6 / `89eafaf171e409e6134fa669b140f615635baf5a`；八个 Web 包
+当前 Server Rust 固定 Foundation 0.7.9 / `c4dfbd8c90ecbd0054776ae03a55447ae5986a5f`；八个 Web 包
 使用同版正式 Release tarball 和 lockfile integrity，不依赖相邻 Foundation checkout。独立 CI 已通过，
 见[消费者矩阵](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/consumer-matrix.json)。
 这证明当前源码的独立依赖与构建，不表示现有产品 tag 已包含随后主分支的改动；正式交付仍须使用
@@ -150,8 +150,9 @@ unable_to_confirm；最后一项仅 Unknown → DeadLetter，所有决定均不�
 
 ## 9. 安全事件
 
-隔离公网和受影响 Sunshine Host，保全 release SHA、数据库 generation、审计和日志，撤销管理员 Session，
-并轮换管理员密码、Sunshine 凭据与 TLS key。credential key 一旦确认泄露，而升级仓又没有已审计的 re-encryption edge，
-应停用该数据库，建立全新当前数据库/key 并重新登记 Host，不能继续运行或自行批量改密文。使用 GitHub Private
-Vulnerability Reporting；公开 issue 不得包含生产 Host、数据库、密文、key、URL 或请求正文。只支持
+隔离公网和受影响 Client，保全 release SHA、数据库 generation、审计和日志，撤销管理员 Session，
+轮换管理员密码、实例授权码、Client credential 与入口 TLS key；Sunshine 本机凭据只在对应 Client 主机上
+轮换。credential key 一旦确认泄露，而升级仓又没有已审计的 re-encryption edge，应停用该数据库，建立
+全新当前数据库/key 并重新登记实例，不能继续运行或自行批量改密文。使用 GitHub Private Vulnerability
+Reporting；公开 issue 不得包含生产实例、数据库、密文、key、URL 或请求正文。只支持
 当前发布版本与当前 `main`。

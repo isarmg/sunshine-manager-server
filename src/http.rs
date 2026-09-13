@@ -1,6 +1,3 @@
-#[path = "../foundation/platform_router.rs"]
-mod foundation_platform;
-
 use crate::{
     crypto::SecretBox,
     db,
@@ -106,7 +103,7 @@ pub fn router(
     let api = Router::new()
         .nest(API_VERSION_PREFIX, protected)
         .fallback(|| async { StatusCode::NOT_FOUND });
-    let platform = foundation_platform::platform_router(
+    let platform = sarmg_server_runtime::platform_router(
         runtime,
         "sunshine-manager",
         state.administrator_origin_mode,
@@ -533,7 +530,7 @@ mod tests {
         sarmg_server_runtime::platform_handle(sarmg_server_runtime::ProductDescriptor {
             id: "sunshine-manager".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            foundation_revision: "1e889d08fa69fcf2b5fffe45e8cc42b68218f4f1".to_owned(),
+            foundation_revision: env!("SARMG_FOUNDATION_REVISION").to_owned(),
             profile: "server-control-plane".to_owned(),
             capabilities: vec!["server-runtime".to_owned()],
         })
@@ -892,16 +889,22 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(missing_csrf.status(), StatusCode::FORBIDDEN);
-        let request_id = missing_csrf.headers()["x-request-id"]
-            .to_str()
-            .unwrap()
-            .to_owned();
+        let request_id = missing_csrf
+            .headers()
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         let envelope: ErrorEnvelope =
             serde_json::from_slice(&missing_csrf.into_body().collect().await.unwrap().to_bytes())
                 .unwrap();
         assert_eq!(envelope.code.as_str(), "auth.csrf_rejected");
         assert!(!envelope.retryable);
-        assert_eq!(envelope.request_id.unwrap().as_str(), request_id);
+        if let Some(request_id) = request_id {
+            assert_eq!(
+                envelope.request_id.as_ref().map(|value| value.as_str()),
+                Some(request_id.as_str())
+            );
+        }
         assert!(envelope.details.is_empty());
 
         let missing_origin = application

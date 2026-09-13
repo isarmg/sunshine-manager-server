@@ -1,12 +1,12 @@
-import { t } from "../shell/i18n.js";
-import {createSarmgAdminApplication,errorRequestId,useAdminApplication,InstancePageNavigation,type InstancePage} from "../shell/index.js";
+import { t } from "@sarmg/admin-ui/i18n";
+import {createSarmgAdminApplication,errorRequestId,useAdminApplication,InstancePageNavigation,type InstancePage} from "@sarmg/admin-shell";
 import {EmptyState,ErrorState,LoadingState} from "@sarmg/admin-ui";
 import {useEffect,useState} from "react";
 import {CURRENT_API_PREFIX,adminApi,isDevices,type DeviceInfo,type Ticket} from "./api";
 import {DeviceRegistrationDialog} from "./DeviceRegistrationDialog";
 import {ClientWorkspace} from "./ClientWorkspace";
 import {DeviceInstances} from "./DeviceInstances";
-import { InstanceHeaderActions } from "../shell/index.js";
+import { InstanceHeaderActions } from "@sarmg/admin-shell";
 function currentPage():InstancePage{return ["details","logs"].includes(window.location.hash.slice(1))?window.location.hash.slice(1) as InstancePage:"instances"}
 function DevicesPage(){
  const{client}=useAdminApplication();const[devices,setDevices]=useState<DeviceInfo[]|null>(null);const[failure,setFailure]=useState<{requestId?:string}|null>(null);

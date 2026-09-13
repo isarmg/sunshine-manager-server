@@ -1,4 +1,4 @@
-import { t } from "../shell/i18n.js";
+import { t } from "@sarmg/admin-ui/i18n";
 export type ConfigField={key:string;label:string;kind:"text"|"integer"|"select";min?:number;max?:number;options?:string[];boolean?:boolean};
 export const configFields:ConfigField[]=[
  {key:"sunshine_name",label:t("Sunshine 名称", "Sunshine name"),kind:"text"},

@@ -1,6 +1,6 @@
 # 本地启动 Sunshine Manager
 
-本地源码服务（不是 systemd 生产安装）只监听 `127.0.0.1:18104`。不安装或启动受管 Sunshine Host，也不自动注册 Host。
+本地源码服务（不是 systemd 生产安装）只监听 `127.0.0.1:18104`。它不安装或启动 Sunshine，也不自动注册 Client 实例。
 
 ```sh
 npm ci --prefix web

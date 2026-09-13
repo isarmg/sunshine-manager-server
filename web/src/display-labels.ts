@@ -1,4 +1,4 @@
-import { t } from "../shell/i18n.js";
+import { t } from "@sarmg/admin-ui/i18n";
 
 /** Display only: protocol values in requests, stored tasks and snapshots stay exact. */
 const labels: Record<string, readonly [string, string]> = {

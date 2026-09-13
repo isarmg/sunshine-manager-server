@@ -1,53 +1,17 @@
-# 10. 源码路线、练习与术语表
+# 10. 阅读路线与术语
 
-## 10.1 阅读路线
+推荐顺序：`protocol/` → `src/http.rs` → `src/db.rs` → `src/operations.rs` → `web/src/` → release scripts。
 
-先看数据库/credential/operation 类型，再读 auth 与 routes，然后读 Sunshine client、worker、cover
-policy/proxy，最后看 Web、release 和部署。先理解权威状态，再理解页面。
-
-## 10.2 按问题找入口
-
-| 问题 | 入口 |
+| 术语 | 当前含义 |
 |---|---|
-| 登录被拒绝 | auth、login admission、Session/CSRF |
-| 远端操作卡住 | operations、worker、Sunshine client |
-| 重启后 unknown | operation startup recovery |
-| 封面失败 | cover policy、DNS、proxy token |
-| 启动拒绝 | release、database schema、credentials/locks |
-| Web 与实际不一致 | auth phase、Host overview fetch；operation 当前需从 API 单独查询 |
+| 实例 | Server 中对应一个独立 Sunshine Client 的记录 |
+| 授权码 | 每实例长期秘密；可查看/更换，更换后必须重新配对 |
+| Binding | manager/device/installation 三元身份 |
+| credential | Client 配对后取得的随机 Bearer 秘密，Server 只存摘要 |
+| snapshot | Client 回报的白名单配置和 revision |
+| operation | 持久化的 read/patch/restart 管理意图 |
+| unknown | 副作用是否发生无法证明，需 inspect-only 与人工核对 |
+| inspect-only | 只查看 Client 已有执行证据，绝不能再次执行 |
 
-## 10.3 练习
-
-1. 临时环境登录并读取测试 Host。
-2. 用同一幂等键重试，证明 operation ID 不变。
-3. 模拟响应丢失并观察 unknown。
-4. 让 DNS 返回公网+内网地址，确认封面拒绝。
-5. 篡改复制 release 的 Web asset，确认 verify 失败。
-6. 证明数据库与错误 external key 组合会被 doctor 拒绝，并记录当前没有受支持 restore 流程。
-
-## 10.4 术语
-
-| 术语 | 含义 |
-|---|---|
-| Host | 一个受管 Sunshine 实例及其连接身份 |
-| mutation | 会改变远端状态的请求 |
-| operation | 持久化、可查询的远端变更意图 |
-| Idempotency-Key | 把网络重试绑定到同一意图的调用方键 |
-| unknown | 无法证明远端副作用的终态 |
-| outbox | 与业务事务一起记录的待处理审计事件 |
-| SSRF | 服务端被诱导访问敏感网络目标 |
-| DNS rebinding | 同一名称在校验与执行时解析为不同目标 |
-| pin | 把执行连接限制到校验通过的完整地址集合 |
-| credential envelope | `sunshine:sgev1:` 存储结构；只有在 external key 和记录身份/字段域 AAD 下认证成功才是当前密文 |
-| source-bound | binary 身份绑定源码 revision |
-| maintenance lock | 产品与离线工具协调数据库访问的锁 |
-
-## 10.5 学成标准
-
-应能解释 202/unknown、幂等键为何不等于 Host 并发控制、为什么远端调用不在 SQLite 事务、封面为何需
-提交前校验并在执行期重新解析、external key 为什么独立保管、当前 Schema 为什么不现场转换。
-
-## 10.6 深入入口
-
-完整时序见[工作流程](../project-workflow.md)，能力边界见[功能与取舍](../feature-inventory-and-tradeoffs.md)，
-生产部署、当前连续性限制和事件处置见[运维文档](../operations.md)。
+读完后应能解释：为什么 Server 不需要 Sunshine 密码，为什么语言切换与任务执行无关，为什么授权码轮换
+需要重新配对，以及为什么 unknown 不能自动重试。

@@ -1,8 +1,8 @@
-import { t } from "../shell/i18n.js";
-import { InstanceNameField } from "../shell/index.js";
+import { t } from "@sarmg/admin-ui/i18n";
+import { InstanceNameField } from "@sarmg/admin-shell";
 import {useState,type FormEvent} from "react";
 import {Button,Dialog,ErrorState,FormField,TextField} from "@sarmg/admin-ui";
-import {useAdminApplication,errorRequestId} from "../shell/index.js";
+import {useAdminApplication,errorRequestId} from "@sarmg/admin-shell";
 import {CURRENT_API_PREFIX,isTicket,type Ticket} from "./api";
 export function TicketPanel({ticket}:{ticket:Ticket}){
  return <section className="sarmg-content-panel"><h2>{t("实例授权码", "Instance authorization code")}</h2><p>{t("这是该实例的长期授权码，服务端会加密保存并允许之后查看或更换。更换后客户端必须重新配对。请勿放入命令行、日志或聊天。", "This is the instance's long-lived authorization code. The server stores it encrypted and lets you view or change it later. Changing it requires the client to pair again. Never place it in command lines, logs, or chats.")}</p>
