@@ -13,6 +13,8 @@ use uuid::Uuid;
 pub const SCHEMA: &str = "sunshine";
 pub use crate::database_schema::{initialize_empty, open_existing, open_or_initialize};
 
+type PairingStateRow = (Option<Vec<u8>>, Option<String>, Option<i64>);
+
 #[derive(Clone, sqlx::FromRow)]
 pub struct Device {
     pub device_id: String,
@@ -201,7 +203,7 @@ pub async fn resolve_pairing(pool: &SqlitePool, token: &str) -> AppResult<serde_
 }
 pub async fn cancel_pairing(pool: &SqlitePool, id: &str, actor: &str) -> AppResult<()> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let row: Option<(Option<Vec<u8>>, Option<String>, Option<i64>)> = sqlx::query_as(
+    let row: Option<PairingStateRow> = sqlx::query_as(
         "SELECT enrollment_hash,installation_id,revoked_at_micros FROM devices WHERE device_id=?",
     )
     .bind(id)
