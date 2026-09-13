@@ -12,8 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{sync::Arc, time::Duration};
 use sunshine_client_protocol::{
-    Binding, Command, ConfigSnapshot, Effectiveness, PROTOCOL, Permission, Report,
-    SUNSHINE_VERSION, Task,
+    Binding, Command, ConfigSnapshot, Effectiveness, PROTOCOL, Permission, Report, Task,
 };
 use tokio::sync::{Notify, watch};
 use uuid::Uuid;
@@ -508,7 +507,7 @@ impl OperationManager {
 pub fn validate_snapshot(snapshot: &ConfigSnapshot) -> AppResult<()> {
     sunshine_client_protocol::validate_revision(&snapshot.revision)
         .map_err(|_| AppError::BadRequest("Client 配置修订无效".into()))?;
-    if snapshot.sunshine_version != SUNSHINE_VERSION
+    if !sunshine_client_protocol::is_supported_sunshine_version(&snapshot.sunshine_version)
         || snapshot.fields.iter().any(|(key, value)| {
             !sunshine_client_protocol::config::FIELDS.contains(&key.as_str()) || value.len() > 512
         })

@@ -27,7 +27,7 @@ use serde::Deserialize;
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use sunshine_client_protocol::{
     Binding, ClientMessage, Command, DeliveryMode, MAX_MESSAGE_BYTES, ManagerMessage, PROTOCOL,
-    SUNSHINE_VERSION, WEBSOCKET_SUBPROTOCOL,
+    WEBSOCKET_SUBPROTOCOL,
 };
 use tokio::{
     sync::Semaphore,
@@ -397,7 +397,7 @@ async fn serve_client(
     };
     if &hello != binding
         || capabilities.protocol != PROTOCOL
-        || capabilities.sunshine_version != SUNSHINE_VERSION
+        || !sunshine_client_protocol::is_supported_sunshine_version(&capabilities.sunshine_version)
         || capabilities.client_version.len() > 64
         || capabilities.managed_fields.len() != sunshine_client_protocol::config::FIELDS.len()
         || sunshine_client_protocol::config::FIELDS

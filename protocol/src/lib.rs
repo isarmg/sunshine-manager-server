@@ -10,8 +10,13 @@ pub mod config;
 pub const PROTOCOL: &str = "sunshine-management/1";
 /// A slash is not legal in an RFC 6455 WebSocket subprotocol header token.
 pub const WEBSOCKET_SUBPROTOCOL: &str = "sunshine-management.v1";
-pub const SUNSHINE_VERSION: &str = "2026.516.143833";
+pub const SUNSHINE_VERSION: &str = "2026.906.222525";
+pub const SUPPORTED_SUNSHINE_VERSIONS: &[&str] = &["2026.516.143833", SUNSHINE_VERSION];
 pub const MAX_MESSAGE_BYTES: usize = 64 * 1024;
+
+pub fn is_supported_sunshine_version(version: &str) -> bool {
+    SUPPORTED_SUNSHINE_VERSIONS.contains(&version)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -281,5 +286,13 @@ mod macos_platform_tests {
             serde_json::to_string(&ClientOs::MacosX86_64).unwrap(),
             "\"macos_x86_64\""
         );
+    }
+
+    #[test]
+    fn only_verified_stable_sunshine_versions_are_admitted() {
+        assert!(is_supported_sunshine_version("2026.516.143833"));
+        assert!(is_supported_sunshine_version("2026.906.222525"));
+        assert!(!is_supported_sunshine_version("2026.910.221003"));
+        assert!(!is_supported_sunshine_version("invalid"));
     }
 }
