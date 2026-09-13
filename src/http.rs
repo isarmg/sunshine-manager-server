@@ -5,7 +5,10 @@ use crate::{
     crypto::SecretBox,
     db,
     error::{AppError, AppResult},
-    model::{DeviceName, DeviceView, OperationResolutionRequest},
+    model::{
+        ClientAuthorization, DeviceName, DeviceView, OperationResolutionRequest,
+        UpdateClientAuthorization,
+    },
     operations::{OperationManager, OperationView},
     release_contract::{API_NAMESPACE, API_VERSION_PREFIX},
 };
@@ -84,6 +87,10 @@ pub fn router(
         .route("/sunshine/devices", get(devices).post(create_device))
         .route("/sunshine/devices/{id}", patch(rename_device))
         .route(
+            "/sunshine/devices/{id}/authorization",
+            get(device_authorization).put(update_device_authorization),
+        )
+        .route(
             "/sunshine/devices/{id}/pairing",
             axum::routing::delete(cancel_pairing),
         )
@@ -147,11 +154,45 @@ async fn create_device(
     Extension(actor): Extension<InternalIdentity>,
     Json(value): Json<DeviceName>,
 ) -> AppResult<Response> {
-    let ticket = db::create_device(&state.pool, &value.name, &actor.subject).await?;
+    let ticket =
+        db::create_device(&state.pool, &state.secrets, &value.name, &actor.subject).await?;
     Ok((
         StatusCode::CREATED,
         [("cache-control", "no-store")],
         Json(ticket),
+    )
+        .into_response())
+}
+async fn device_authorization(
+    State(state): State<WorkerState>,
+    Path(id): Path<String>,
+) -> AppResult<Response> {
+    Ok((
+        [("cache-control", "no-store")],
+        Json(ClientAuthorization {
+            authorization_code: db::get_authorization(&state.pool, &state.secrets, &id).await?,
+        }),
+    )
+        .into_response())
+}
+async fn update_device_authorization(
+    State(state): State<WorkerState>,
+    Extension(actor): Extension<InternalIdentity>,
+    Path(id): Path<String>,
+    Json(value): Json<UpdateClientAuthorization>,
+) -> AppResult<Response> {
+    Ok((
+        [("cache-control", "no-store")],
+        Json(ClientAuthorization {
+            authorization_code: db::rotate_authorization(
+                &state.pool,
+                &state.secrets,
+                &id,
+                &value.authorization_code,
+                &actor.subject,
+            )
+            .await?,
+        }),
     )
         .into_response())
 }
@@ -254,7 +295,7 @@ fn require_client_ingress(peer: SocketAddr, headers: &HeaderMap) -> AppResult<()
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PairingRequest {
-    token: String,
+    authorization_code: String,
 }
 async fn resolve_pairing(
     State(state): State<WorkerState>,
@@ -265,7 +306,7 @@ async fn resolve_pairing(
     require_client_ingress(peer, &headers)?;
     Ok((
         [("cache-control", "no-store")],
-        Json(db::resolve_pairing(&state.pool, &value.token).await?),
+        Json(db::resolve_pairing(&state.pool, &value.authorization_code).await?),
     )
         .into_response())
 }

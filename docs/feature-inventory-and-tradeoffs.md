@@ -105,6 +105,7 @@
 | SUN-097 | CI 固定 Rust 1.98、Node 26.7.0、锁文件和 action full SHA | workflow、toolchain files、supply-chain check | 开发运维 | 中 | clean checkout 结果不可复现，依赖漂移可绕过评审 | locked install、action/ref/工具链扫描 |
 | SUN-098 | 中文学习指南、流程树、完整清单、README、运维文档同代码维护 | `docs/`、README | 开发运维 | 中 | 关键状态语义和删除闭包依赖口头知识，开发者会误判边界 | 链接、命令、代码符号与版本抽查 |
 | SUN-099 | 产品只接受唯一当前配置/API/Schema/key/release 身份 | 各入口 fail-closed 校验 | 核心 | 高 | 加入 fallback 会把每次发布变成长期多版本产品并扩大安全矩阵 | 非当前状态逐类拒绝、拒绝时零写入 |
+| SUN-100 | Client 可精确固定 Sunshine 自带单张 `cacert.pem`，兼容默认无回环 SAN 的自签名证书 | Client `ExactCertificateVerifier`、受保护配对输入、真实回环 TLS 验收 | 保障 | 高 | 全局关闭 TLS 或首次连接自动信任会让本机恶意进程在配对时窃取 Sunshine Basic 凭据 | 正确固定证书成功、不同证书在 HTTP 前拒绝、握手签名、无重定向、正文/头部上限 |
 | SUN-100 | 明确不提供 Moonlight 媒体、Host OS 任意命令、SSO、多活、产品内迁移/备份/恢复 | route/依赖/Schema 中不存在这些能力 | 核心 | 高 | 任一新增都会改变威胁模型、带宽、身份或一致性架构 | 单独设计评审、数据/故障/安全全链路测试 |
 
 ## 1. 功能清单

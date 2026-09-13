@@ -20,6 +20,7 @@ pub struct Device {
     pub installation_id: Option<String>,
     pub credential_hash: Option<Vec<u8>>,
     pub enrollment_hash: Option<Vec<u8>>,
+    pub authorization_code_enc: String,
     pub revoked_at_micros: Option<i64>,
     pub session_id: Option<String>,
     pub last_seen_at_micros: Option<i64>,
@@ -56,7 +57,9 @@ impl Device {
             id: self.device_id.clone(),
             name: self.name.clone(),
             registered: self.installation_id.is_some(),
-            pairing_pending: self.enrollment_hash.is_some() && self.revoked_at_micros.is_none(),
+            pairing_pending: self.enrollment_hash.is_some()
+                && self.installation_id.is_none()
+                && self.revoked_at_micros.is_none(),
             revoked: self.revoked_at_micros.is_some(),
             client_online: online,
             sunshine_reachable: if online
@@ -112,6 +115,7 @@ pub async fn list_devices(pool: &SqlitePool) -> AppResult<Vec<DeviceView>> {
 }
 pub async fn create_device(
     pool: &SqlitePool,
+    secrets: &SecretBox,
     name: &str,
     actor: &str,
 ) -> AppResult<EnrollmentTicket> {
@@ -119,6 +123,7 @@ pub async fn create_device(
     let id = Uuid::new_v4().to_string();
     let now = now_micros()?;
     let token = random_token();
+    let authorization_code_enc = secrets.encrypt_client_authorization(&id, &token)?;
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM devices")
         .fetch_one(&mut *tx)
@@ -126,8 +131,8 @@ pub async fn create_device(
     if count >= 4096 {
         return Err(AppError::Conflict("设备容量已满".into()));
     }
-    sqlx::query("INSERT INTO devices(device_id,name,enrollment_hash,created_at_micros,updated_at_micros) VALUES(?,?,?,?,?)")
-        .bind(&id).bind(name).bind(token_hash(&token).as_slice()).bind(now).bind(now).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO devices(device_id,name,enrollment_hash,authorization_code_enc,created_at_micros,updated_at_micros) VALUES(?,?,?,?,?,?)")
+        .bind(&id).bind(name).bind(token_hash(&token).as_slice()).bind(authorization_code_enc).bind(now).bind(now).execute(&mut *tx).await?;
     audit(&mut tx, "device.create", &id, actor, None).await?;
     tx.commit().await?;
     Ok(EnrollmentTicket {
@@ -135,6 +140,57 @@ pub async fn create_device(
         manager_id: manager_id(pool).await?,
         token,
     })
+}
+pub async fn get_authorization(
+    pool: &SqlitePool,
+    secrets: &SecretBox,
+    id: &str,
+) -> AppResult<String> {
+    let encrypted: Option<String> =
+        sqlx::query_scalar("SELECT authorization_code_enc FROM devices WHERE device_id=?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?;
+    secrets.decrypt_client_authorization(
+        id,
+        &encrypted.ok_or_else(|| AppError::NotFound("设备不存在".into()))?,
+    )
+}
+pub async fn rotate_authorization(
+    pool: &SqlitePool,
+    secrets: &SecretBox,
+    id: &str,
+    authorization_code: &str,
+    actor: &str,
+) -> AppResult<String> {
+    validate_token(authorization_code)?;
+    let encrypted = secrets.encrypt_client_authorization(id, authorization_code)?;
+    let now = now_micros()?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let changed = sqlx::query(
+        "UPDATE devices SET enrollment_hash=?,authorization_code_enc=?,installation_id=NULL,\
+         credential_hash=NULL,session_id=NULL,last_seen_at_micros=NULL,health_at_micros=NULL,\
+         sunshine_reachable=NULL,capabilities_json=NULL,updated_at_micros=? \
+         WHERE device_id=? AND revoked_at_micros IS NULL",
+    )
+    .bind(token_hash(authorization_code).as_slice())
+    .bind(encrypted)
+    .bind(now)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if changed != 1 {
+        tx.rollback().await?;
+        return if get_device(pool, id).await.is_err() {
+            Err(AppError::NotFound("设备不存在".into()))
+        } else {
+            Err(AppError::Conflict("已撤销实例不能更换授权码".into()))
+        };
+    }
+    audit(&mut tx, "device.authorization.rotate", id, actor, None).await?;
+    tx.commit().await?;
+    Ok(authorization_code.to_owned())
 }
 pub async fn resolve_pairing(pool: &SqlitePool, token: &str) -> AppResult<serde_json::Value> {
     validate_token(token).map_err(|_| AppError::Unauthorized)?;
@@ -145,6 +201,31 @@ pub async fn resolve_pairing(pool: &SqlitePool, token: &str) -> AppResult<serde_
 }
 pub async fn cancel_pairing(pool: &SqlitePool, id: &str, actor: &str) -> AppResult<()> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let row: Option<(Option<Vec<u8>>, Option<String>, Option<i64>)> = sqlx::query_as(
+        "SELECT enrollment_hash,installation_id,revoked_at_micros FROM devices WHERE device_id=?",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((enrollment_hash, installation_id, revoked_at)) = row else {
+        return Err(AppError::NotFound("设备不存在".into()));
+    };
+    if enrollment_hash.is_none() && installation_id.is_none() && revoked_at.is_none() {
+        audit(
+            &mut tx,
+            "device.delete",
+            id,
+            actor,
+            Some("cancelled pairing instance permanently deleted"),
+        )
+        .await?;
+        sqlx::query("DELETE FROM devices WHERE device_id=?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        return Ok(());
+    }
     let changed = sqlx::query("UPDATE devices SET enrollment_hash=NULL,updated_at_micros=? WHERE device_id=? AND installation_id IS NULL AND revoked_at_micros IS NULL AND enrollment_hash IS NOT NULL")
         .bind(now_micros()?).bind(id).execute(&mut *tx).await?.rows_affected();
     if changed != 1 {
@@ -194,7 +275,7 @@ pub async fn enroll(
     }
     let now = now_micros()?;
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let changed = sqlx::query("UPDATE devices SET installation_id=?,credential_hash=?,enrollment_hash=NULL,updated_at_micros=? WHERE device_id=? AND installation_id IS NULL AND revoked_at_micros IS NULL AND enrollment_hash=?")
+    let changed = sqlx::query("UPDATE devices SET installation_id=?,credential_hash=?,updated_at_micros=? WHERE device_id=? AND installation_id IS NULL AND revoked_at_micros IS NULL AND enrollment_hash=?")
         .bind(installation.to_string()).bind(token_hash(credential).as_slice()).bind(now).bind(id).bind(token_hash(token).as_slice()).execute(&mut *tx).await?.rows_affected();
     if changed != 1 {
         return Err(AppError::Unauthorized);
@@ -310,6 +391,24 @@ pub async fn require_current_runtime_state(
     sarmg_sqlite::integrity_check(pool).await?;
     sarmg_sqlite::foreign_key_check(pool).await?;
     manager_id(pool).await?;
+    let authorizations: Vec<(String, String, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT device_id,authorization_code_enc,enrollment_hash FROM devices ORDER BY device_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    for (device_id, encrypted, enrollment_hash) in authorizations {
+        let code = secrets
+            .decrypt_client_authorization(&device_id, &encrypted)
+            .map_err(|_| anyhow::anyhow!("stored client authorization is unreadable"))?;
+        validate_token(&code)
+            .map_err(|_| anyhow::anyhow!("stored client authorization is invalid"))?;
+        if let Some(stored_hash) = enrollment_hash {
+            anyhow::ensure!(
+                stored_hash == token_hash(&code),
+                "stored client authorization digest does not match its encrypted value"
+            );
+        }
+    }
     let store = sarmg_operations::SqliteOperationStore::new(pool.clone());
     let mut cursor = String::new();
     loop {

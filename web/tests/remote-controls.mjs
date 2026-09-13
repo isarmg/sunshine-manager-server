@@ -13,6 +13,7 @@ try {for(const engine of [chromium,firefox]){
   await page.route("**/api/v2/**",async route=>{
    const req=route.request();const path=new URL(req.url()).pathname;
    if(path.endsWith("/sunshine/devices"))return route.fulfill({json:[device]});
+   if(path.endsWith("/authorization"))return route.fulfill({json:{authorization_code:"b".repeat(64)}});
    if(path.endsWith("/tasks")){
     if(req.method()==="POST"){
      const command=req.postDataJSON();commands.push(command);
@@ -23,7 +24,8 @@ try {for(const engine of [chromium,firefox]){
    }return route.fulfill({json:session});
   });
   await page.goto("http://127.0.0.1:"+server.httpServer.address().port);
-  await page.getByRole("button",{name:"Sunshine 配置",exact:true}).click();
+  await page.getByRole("button",{name:"选择实例 游戏主机",exact:true}).click();
+  await expect(page.getByRole("button",{name:"详细信息",exact:true})).toHaveAttribute("aria-pressed","true");
   await page.getByLabel("Sunshine 名称", { exact: true }).fill("New name");
   await page.getByRole("button",{name:"预览变更",exact:true}).click();
   await expect(page.getByRole("region",{name:"变更差异预览"})).toContainText("Original");
@@ -38,9 +40,9 @@ try {for(const engine of [chromium,firefox]){
   await dialog.getByRole("button",{name:"确认",exact:true}).click();
   await expect.poll(()=>commands.length).toBe(2);
   assert.equal(commands[1].administrator_confirmed,true);
-  await page.getByRole("button",{name:"任务记录",exact:true}).click();
+  await page.getByRole("button",{name:"日志",exact:true}).click();
   await expect(page.locator("body")).toContainText("已确认重启请求");
-  for(const forbidden of ["应用管理","配对 PIN","日志","诊断","重置显示设备"])await expect(page.getByRole("button",{name:forbidden,exact:true})).toHaveCount(0);
+  for(const forbidden of ["应用管理","配对 PIN","诊断","重置显示设备"])await expect(page.getByRole("button",{name:forbidden,exact:true})).toHaveCount(0);
   assert.deepEqual(errors,[]);console.log(engine.name()+": typed Client patch, diff, manual restart confirmation and task results passed");
  }finally{await browser.close();}
 }}finally{await new Promise(done=>server.httpServer.close(done));}

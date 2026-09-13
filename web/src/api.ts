@@ -6,6 +6,7 @@ export const adminApi = createAdministratorApiClient();
 export type Snapshot = {revision:string;sunshine_version:string;fields:Record<string,string>;effectiveness:"pending_verification"|"awaiting_restart"};
 export type DeviceInfo = {id:string;name:string;registered:boolean;pairing_pending:boolean;revoked:boolean;client_online:boolean;sunshine_reachable:boolean|null;configuration_state:string;snapshot:Snapshot|null;capabilities:{protocol:string;client_version:string;os:string;sunshine_version:string;restart_allowed:boolean;managed_fields:string[]}|null;last_seen_at_micros:number|null};
 export type Ticket={device:DeviceInfo;manager_id:string;token:string};
+export type ClientAuthorization={authorization_code:string};
 export type Command={kind:"read_config"}|{kind:"patch_config";expected_revision:string;set:Record<string,string|number|boolean>;remove:string[];restart_policy:"manual"}|{kind:"restart";expected_revision:string;administrator_confirmed:true};
 export type Report={kind:string;snapshot?:Snapshot;reason?:string;actual_revision?:string};
 export type Operation={operation_id:string;device_id:string;action:string;state:"pending"|"running"|"succeeded"|"failed"|"unknown"|"dead_letter"|"resolved";attempt:number;created_at_micros:number;updated_at_micros:number;result:Report|null;reconciliation:Report|null;resolution:string|null};
@@ -16,6 +17,7 @@ export function isDevice(value:unknown):value is DeviceInfo{
 }
 export function isDevices(value:unknown):value is DeviceInfo[]{return Array.isArray(value)&&value.every(isDevice)}
 export function isTicket(value:unknown):value is Ticket{return record(value)&&isDevice(value.device)&&typeof value.manager_id==="string"&&typeof value.token==="string"}
+export function isClientAuthorization(value:unknown):value is ClientAuthorization{return record(value)&&Object.keys(value).length===1&&typeof value.authorization_code==="string"&&/^[a-f0-9]{64}$/.test(value.authorization_code)}
 function isReport(value:unknown):value is Report{return record(value)&&typeof value.kind==="string"&&(!("snapshot" in value)||isSnapshot(value.snapshot))}
 export function isOperation(value:unknown):value is Operation{return record(value)&&typeof value.operation_id==="string"&&typeof value.device_id==="string"&&typeof value.action==="string"&&typeof value.state==="string"&&["pending","running","succeeded","failed","unknown","dead_letter","resolved"].includes(value.state)&&(value.result===null||isReport(value.result))&&(value.reconciliation===null||isReport(value.reconciliation))}
 export function isOperations(value:unknown):value is Operation[]{return Array.isArray(value)&&value.every(isOperation)}

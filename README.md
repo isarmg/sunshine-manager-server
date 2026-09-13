@@ -4,9 +4,9 @@
 [sunshine-manager-client](https://github.com/isarmg/sunshine-manager-client) 仓库，固定适配 Sunshine 官方 v2026.516.143833。
 客户端通过完整 Git 提交固定本仓库的协议依赖，不需要相邻工作区。拆分前验收仅是历史证据，不代表新仓库版本已完成双平台真实 Sunshine 验收。
 
-管理 Web 支持实例创建与 Client 配对、设备状态、白名单配置预览/编辑、明确授权重启和任务记录。
+管理 Web 支持实例创建与 Client 配对、查看和更换每实例长期授权码、设备状态、白名单配置预览/编辑、明确授权重启和任务记录。授权码在 Server 端加密保存；更换后旧客户端凭据立即失效，必须使用新码重新配对。
 使用说明见 [实例创建](docs/instance-management.md) 和 [Sunshine 远端管理](docs/remote-management.md)。
-主分支的新客户端配对入口和系统证书信任要求见 [简化配对](docs/simple-pairing.md)。
+主分支的新客户端配对入口、Manager 系统证书信任及 Sunshine 自带证书固定方式见 [简化配对](docs/simple-pairing.md)。
 
 Sunshine Manager `0.10.6` 是独立的 Sunshine 主机管理服务。Server API 采用 sarmg-foundation-server 的
 持久管理员控制面；Manager 保存设备身份、任务及审计，不集中保存 Sunshine 管理密码。

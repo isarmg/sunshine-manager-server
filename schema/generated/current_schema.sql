@@ -141,6 +141,7 @@ CREATE TABLE devices (
     installation_id TEXT UNIQUE CHECK(installation_id IS NULL OR length(installation_id) = 36),
     credential_hash BLOB UNIQUE CHECK(credential_hash IS NULL OR length(credential_hash) = 32),
     enrollment_hash BLOB UNIQUE CHECK(enrollment_hash IS NULL OR length(enrollment_hash) = 32),
+    authorization_code_enc TEXT NOT NULL CHECK(length(authorization_code_enc) BETWEEN 80 AND 1024),
     revoked_at_micros INTEGER,
     session_id TEXT,
     last_seen_at_micros INTEGER,

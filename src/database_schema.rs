@@ -21,8 +21,8 @@ pub const APPLICATION: &str = "sunshine-manager";
 pub const APPLICATION_VERSION: &str = env!("CARGO_PKG_VERSION");
 // Persisted schema identity changes only with a data-format migration.
 const SCHEMA_APPLICATION_VERSION: &str = "0.10.1";
-pub const SCHEMA_REVISION: i64 = 6;
-pub const SCHEMA_SHA256: &str = "94f1704eca2543b721a442b40f149c70340daa242009ca58fdd17ebe47aea0db";
+pub const SCHEMA_REVISION: i64 = 7;
+pub const SCHEMA_SHA256: &str = "1acc8f2d9fac7ec4e973dd7e43cf5099e4a0b713b58a59e4969797602030d5d2";
 
 const CURRENT_SCHEMA_SQL: &str = include_str!("../schema/generated/current_schema.sql");
 

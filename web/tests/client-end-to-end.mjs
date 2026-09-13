@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {execFile,spawn} from "node:child_process";
 import {promisify} from "node:util";
-import {mkdtemp,readFile,writeFile,open,rm} from "node:fs/promises";
+import {mkdtemp,readFile,open,rm} from "node:fs/promises";
 import {join,resolve} from "node:path";
 import {tmpdir} from "node:os";
 import {createServer as httpsServer} from "node:https";
@@ -19,6 +19,14 @@ const exec=promisify(execFile);
 let sunshine,ingress,client,clientLog;
 const tunnels=new Set();
 const clientBinary=resolve(process.env.SUNSHINE_TEST_CLIENT_BINARY);
+async function runWithInput(args,input,env){
+ return new Promise((done,fail)=>{
+  const child=spawn(clientBinary,args,{env,stdio:["pipe","pipe","pipe"]});let stdout="",stderr="";
+  child.stdout.on("data",chunk=>stdout+=chunk);child.stderr.on("data",chunk=>stderr+=chunk);
+  child.once("error",fail);child.once("exit",code=>code===0?done(stdout):fail(new Error("Client command failed with exit "+code+": "+stderr+stdout)));
+  child.stdin.end(input);
+ });
+}
 async function stopClient(){
  if(client&&client.exitCode===null&&client.signalCode===null){
   const stopped=new Promise((done,fail)=>{const timer=setTimeout(()=>fail(new Error("Test Client failed to stop; state retained at "+root)),10000);client.once("exit",()=>{clearTimeout(timer);done()})});
@@ -30,14 +38,16 @@ async function startClient(state){
  await new Promise((done,fail)=>{client.once("spawn",done);client.once("error",fail)});
 }
 try {
- const caKey=join(root,"ca.key"),caCert=join(root,"ca.crt"),key=join(root,"server.key"),csr=join(root,"server.csr"),cert=join(root,"server.crt");
+ const caKey=join(root,"ca.key"),caCert=join(root,"ca.crt"),key=join(root,"server.key"),csr=join(root,"server.csr"),cert=join(root,"server.crt"),sunshineKey=join(root,"sunshine.key"),sunshineCert=join(root,"sunshine-cacert.pem");
  await exec("openssl",["req","-x509","-newkey","rsa:2048","-nodes","-keyout",caKey,"-out",caCert,"-days","1","-subj","/CN=Client test CA","-addext","basicConstraints=critical,CA:TRUE"]);
  await exec("openssl",["req","-new","-newkey","rsa:2048","-nodes","-keyout",key,"-out",csr,"-subj","/CN=localhost","-addext","subjectAltName=DNS:localhost,IP:127.0.0.1","-addext","basicConstraints=critical,CA:FALSE","-addext","extendedKeyUsage=serverAuth"]);
  await exec("openssl",["x509","-req","-in",csr,"-CA",caCert,"-CAkey",caKey,"-CAcreateserial","-out",cert,"-days","1","-copy_extensions","copy"]);
  const tls={key:await readFile(key),cert:await readFile(cert)};
+ await exec("openssl",["req","-x509","-newkey","rsa:2048","-nodes","-keyout",sunshineKey,"-out",sunshineCert,"-days","1","-subj","/CN=Sunshine Gamestream Host"]);
+ const sunshineTls={key:await readFile(sunshineKey),cert:await readFile(sunshineCert)};
  let config={sunshine_name:"Original",qp:"28",output_name:"DISPLAY1",custom_setting:"preserved","global_prep_cmd":"LOCAL_ONLY_SECRET_COMMAND"};
  let writes=0,restarts=0;let loseRestartReceipt=false;
- sunshine=httpsServer(tls,async(req,res)=>{
+ sunshine=httpsServer(sunshineTls,async(req,res)=>{
   const json=value=>{res.setHeader("content-type","application/json");res.end(JSON.stringify(value))};
   if(req.headers.authorization!=="Basic "+Buffer.from("fixture:local-only-password").toString("base64")){res.statusCode=401;return json({status:false});}
   if(req.method==="GET"&&req.url==="/api/config")return json({status:true,platform:"linux",version:"2026.516.143833",...config});
@@ -75,12 +85,12 @@ try {
    const created=page.waitForResponse(r=>r.url().endsWith("/sunshine/devices")&&r.request().method()==="POST").then(async response=>{await response.finished();return response.json()});
    await page.getByRole("button",{name:"创建实例",exact:true}).click();
    const ticket=await created;const id=ticket.device.id;const api="/api/v2/sunshine/devices/"+id;
-   const bootstrap=join(root,"bootstrap.json"),state=join(root,"client");
-   await writeFile(bootstrap,JSON.stringify({manager_endpoint:"wss://127.0.0.1:"+ingress.address().port+"/sunshine-client/v1/connect",enrollment_token:ticket.token,sunshine_endpoint:"https://127.0.0.1:"+sunshine.address().port+"/",sunshine_username:"fixture",sunshine_password:"local-only-password",restart_allowed:true}),{mode:0o600});
-   await exec(clientBinary,["init","--state",state,"--bootstrap",bootstrap]);
-   // The CLI wizard must reject an untrusted CA before consuming the pairing code.
-   await assert.rejects(exec(clientBinary,["pair","--state",state],{env:{...process.env,SSL_CERT_FILE:"/nonexistent-test-trust-store"}}));
-   await exec(clientBinary,["pair","--state",state],{env:{...process.env,SSL_CERT_FILE:caCert}});
+   const state=join(root,"client");
+   const pairingInput=JSON.stringify({server:"https://127.0.0.1:"+ingress.address().port+"/",authorization_code:ticket.token,sunshine_endpoint:"https://127.0.0.1:"+sunshine.address().port+"/",sunshine_certificate_path:sunshineCert,sunshine_username:"fixture",sunshine_password:"local-only-password",restart_allowed:true});
+   const pairArgs=["pair","--state",state,"--input-stdin","--non-interactive","--format","json"];
+   // The CLI must reject an untrusted Manager before enrolling the durable client credential.
+   await assert.rejects(runWithInput(pairArgs,pairingInput,{...process.env,SSL_CERT_FILE:"/nonexistent-test-trust-store"}));
+   await runWithInput(pairArgs,pairingInput,{...process.env,SSL_CERT_FILE:caCert});
    clientLog=await open(join(root,"client.log"),"wx",0o600);await startClient(state);
    const device=async()=>{const r=await page.request.get(base+"/api/v2/sunshine/devices");return(await r.json()).find(d=>d.id===id)};
    await expect.poll(async()=>(await device()).client_online,{timeout:20000}).toBe(true);
@@ -127,7 +137,7 @@ try {
    assert.equal(db.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE name='hosts'").get().count,0);db.close();
    const log=await readFile(join(root,"client.log"),"utf8");assert.ok(!log.includes("local-only-password")&&!log.includes(ticket.token));
    await expect(page.locator("body")).not.toContainText("local-only-password");assert.deepEqual(errors,[]);
-   console.log("PASS: browser → durable Manager operation → verified WSS → independent Client → merged local HTTPS save → audit; offline delivery, full-revision conflict, uncertain restart/reconnect and revocation");
+   console.log("PASS: browser → durable Manager operation → verified WSS → independent Client → pinned built-in-style Sunshine certificate → merged local HTTPS save → audit; offline delivery, full-revision conflict, uncertain restart/reconnect and revocation");
   }finally{await stopClient();await browser.close();for(const socket of tunnels)socket.destroy();await new Promise(done=>ingress.close(done));ingress=undefined;}
  });
 }finally{

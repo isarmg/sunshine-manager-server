@@ -16,8 +16,13 @@ async fn database() -> (tempfile::TempDir, sqlx::SqlitePool) {
     .unwrap();
     (dir, pool)
 }
+fn secrets() -> SecretBox {
+    SecretBox::new("test", [7; 32]).unwrap()
+}
 async fn registered(pool: &sqlx::SqlitePool) -> (String, String) {
-    let ticket = db::create_device(pool, "测试设备", "admin").await.unwrap();
+    let ticket = db::create_device(pool, &secrets(), "测试设备", "admin")
+        .await
+        .unwrap();
     let credential = db::random_token();
     db::enroll(
         pool,
@@ -44,9 +49,11 @@ fn manager(pool: &sqlx::SqlitePool) -> OperationManager {
 }
 
 #[tokio::test]
-async fn pairing_code_resolves_only_active_unconsumed_devices() {
+async fn authorization_code_resolves_only_pending_active_instances() {
     let (_dir, pool) = database().await;
-    let ticket = db::create_device(&pool, "pair", "admin").await.unwrap();
+    let ticket = db::create_device(&pool, &secrets(), "pair", "admin")
+        .await
+        .unwrap();
     let target = db::resolve_pairing(&pool, &ticket.token).await.unwrap();
     assert_eq!(target["device_id"], ticket.device.id);
     assert_eq!(target["manager_id"], ticket.manager_id.to_string());
@@ -66,21 +73,90 @@ async fn pairing_code_resolves_only_active_unconsumed_devices() {
     .await
     .unwrap();
     assert!(db::resolve_pairing(&pool, &ticket.token).await.is_err());
-    let cancelled = db::create_device(&pool, "cancel", "admin").await.unwrap();
+    let cancelled = db::create_device(&pool, &secrets(), "cancel", "admin")
+        .await
+        .unwrap();
     db::cancel_pairing(&pool, &cancelled.device.id, "admin")
         .await
         .unwrap();
     assert!(db::resolve_pairing(&pool, &cancelled.token).await.is_err());
-    let revoked = db::create_device(&pool, "revoke", "admin").await.unwrap();
+    let revoked = db::create_device(&pool, &secrets(), "revoke", "admin")
+        .await
+        .unwrap();
     db::revoke(&pool, &revoked.device.id, "admin")
         .await
         .unwrap();
     assert!(db::resolve_pairing(&pool, &revoked.token).await.is_err());
 }
+
+#[tokio::test]
+async fn rotating_instance_authorization_revokes_client_and_requires_new_code() {
+    let (_dir, pool) = database().await;
+    let secrets = secrets();
+    let ticket = db::create_device(&pool, &secrets, "rotate", "admin")
+        .await
+        .unwrap();
+    assert_eq!(
+        db::get_authorization(&pool, &secrets, &ticket.device.id)
+            .await
+            .unwrap(),
+        ticket.token
+    );
+    let encrypted: String =
+        sqlx::query_scalar("SELECT authorization_code_enc FROM devices WHERE device_id=?")
+            .bind(&ticket.device.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!encrypted.contains(&ticket.token));
+
+    let installation = Uuid::new_v4();
+    let old_credential = db::random_token();
+    db::enroll(
+        &pool,
+        &ticket.device.id,
+        installation,
+        &ticket.token,
+        &old_credential,
+    )
+    .await
+    .unwrap();
+    let new_code = db::random_token();
+    db::rotate_authorization(&pool, &secrets, &ticket.device.id, &new_code, "admin")
+        .await
+        .unwrap();
+    assert!(
+        db::authenticate_device(&pool, &old_credential)
+            .await
+            .is_err()
+    );
+    assert!(db::resolve_pairing(&pool, &ticket.token).await.is_err());
+    assert_eq!(
+        db::resolve_pairing(&pool, &new_code).await.unwrap()["device_id"],
+        ticket.device.id
+    );
+    let new_credential = db::random_token();
+    db::enroll(
+        &pool,
+        &ticket.device.id,
+        installation,
+        &new_code,
+        &new_credential,
+    )
+    .await
+    .unwrap();
+    assert!(
+        db::authenticate_device(&pool, &new_credential)
+            .await
+            .is_ok()
+    );
+}
 #[tokio::test]
 async fn enrollment_is_single_use_hashed_bound_and_revocable() {
     let (_dir, pool) = database().await;
-    let ticket = db::create_device(&pool, "设备", "admin").await.unwrap();
+    let ticket = db::create_device(&pool, &secrets(), "设备", "admin")
+        .await
+        .unwrap();
     let installation = Uuid::new_v4();
     let credential = db::random_token();
     assert!(
@@ -121,7 +197,10 @@ async fn enrollment_is_single_use_hashed_bound_and_revocable() {
         stored.credential_hash,
         Some(db::token_hash(&credential).to_vec())
     );
-    assert!(stored.enrollment_hash.is_none());
+    assert_eq!(
+        stored.enrollment_hash,
+        Some(db::token_hash(&ticket.token).to_vec())
+    );
     db::revoke(&pool, &ticket.device.id, "admin").await.unwrap();
     assert!(db::authenticate_device(&pool, &credential).await.is_err());
     assert!(
@@ -140,7 +219,9 @@ async fn enrollment_is_single_use_hashed_bound_and_revocable() {
 #[tokio::test]
 async fn pairing_has_no_expiry_and_duplicate_installation_is_rejected() {
     let (_dir, pool) = database().await;
-    let first = db::create_device(&pool, "first", "admin").await.unwrap();
+    let first = db::create_device(&pool, &secrets(), "first", "admin")
+        .await
+        .unwrap();
     sqlx::query("UPDATE devices SET created_at_micros=0,updated_at_micros=0")
         .execute(&pool)
         .await
@@ -155,7 +236,9 @@ async fn pairing_has_no_expiry_and_duplicate_installation_is_rejected() {
     )
     .await
     .unwrap();
-    let other = db::create_device(&pool, "second", "admin").await.unwrap();
+    let other = db::create_device(&pool, &secrets(), "second", "admin")
+        .await
+        .unwrap();
     assert!(
         db::enroll(
             &pool,
@@ -168,7 +251,7 @@ async fn pairing_has_no_expiry_and_duplicate_installation_is_rejected() {
         .is_err()
     );
     assert!(
-        db::create_device(&pool, &"长".repeat(33), "admin")
+        db::create_device(&pool, &secrets(), &"长".repeat(33), "admin")
             .await
             .is_err()
     );

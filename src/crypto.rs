@@ -28,6 +28,12 @@ impl EnvelopeDomain for OperationRequestEnvelope {
     const REVISION: u16 = 1;
 }
 
+struct ClientAuthorizationEnvelope;
+impl EnvelopeDomain for ClientAuthorizationEnvelope {
+    const DOMAIN: &'static [u8] = b"sunshine-manager/client-authorization";
+    const REVISION: u16 = 1;
+}
+
 #[derive(Clone)]
 pub struct SecretBox {
     current_id: String,
@@ -80,6 +86,14 @@ impl SecretBox {
             value,
             &operation_request_aad(operation_id, action),
         )
+    }
+
+    pub fn encrypt_client_authorization(&self, device_id: &str, value: &str) -> AppResult<String> {
+        self.encrypt::<ClientAuthorizationEnvelope>(value, device_id.as_bytes())
+    }
+
+    pub fn decrypt_client_authorization(&self, device_id: &str, value: &str) -> AppResult<String> {
+        self.decrypt::<ClientAuthorizationEnvelope>(value, device_id.as_bytes())
     }
 
     fn encrypt<D: EnvelopeDomain>(&self, value: &str, binding: &[u8]) -> AppResult<String> {

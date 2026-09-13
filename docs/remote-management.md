@@ -1,13 +1,14 @@
 # Sunshine Client 远端管理
 
-实例列表为独立表格页面，功能导航位于顶部。新建实例只填写名称并取得一次性配对码；
+实例列表为独立表格页面，功能导航位于顶部。新建实例只填写名称并取得该实例的长期授权码；Server 加密保存，设备状态页可查看和更换。更换后旧 Client credential 立即撤销，必须使用新码重新配对。
 在 Sunshine 主机安装独立仓库的 [Client](https://github.com/isarmg/sunshine-manager-client)，由其主动建立 Manager WSS 通道。
-Sunshine 用户名、密码、可信证书仅在 Client 本机配置，不在 Manager 的连接表单填写。
+Sunshine 用户名、密码和其自带 `cacert.pem` 仅在 Client 本机配置，不在 Manager 的连接表单填写。默认
+自签名证书由 Client 精确固定；Manager 不接收证书或 Sunshine 凭据。
 
 | 页面 | 当前功能 |
 | --- | --- |
-| 实例 | 每行一个设备，创建、选择、取消未用配对码 |
-| 设备状态 | 分别显示 Client 在线、Sunshine 可达、配置状态，撤销设备凭据 |
+| 实例 | 每行一个设备，创建、选择、取消未使用的当前授权码 |
+| 设备状态 | 查看/更换授权码，分别显示 Client 在线、Sunshine 可达、配置状态，永久撤销设备凭据 |
 | Sunshine 配置 | 读取受管字段、编辑白名单字段、差异预览、保存、冲突提示、明确确认重启 |
 | 任务记录 | 查询持久操作及结果，按现有规则核对不确定结果 |
 

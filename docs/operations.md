@@ -111,9 +111,11 @@ proxy 必须覆盖而非信任外部传入的 `X-Forwarded-Proto`，仅在已验
 并支持 `/sunshine-client/v1/connect` 的 WebSocket Upgrade。独立设备通道拒绝 Cookie/Origin。
 
 Client 主动连接 Server 的 WSS，无需在 Sunshine 主机开放额外入站管理端口。
-只有 Client 通过本机回环 HTTPS 访问 Sunshine，并验证证书链、有效期及 IP SAN；Server 不直接连接 Sunshine。
-两端仅接受系统已信任证书，没有 TOFU 或绕过开关。私有 CA 必须先安全安装到 Client 实际运行身份使用的
-系统信任库；Windows LocalSystem 使用计算机信任存储。详见[简化配对](https://github.com/isarmg/sunshine-manager-server/blob/v0.10.6/docs/simple-pairing.md)。
+只有 Client 通过本机回环 HTTPS 访问 Sunshine；Server 不直接连接 Sunshine。Manager HTTPS/WSS 仅接受
+系统已信任且名称匹配的证书；私有 CA 必须先安全安装到 Client 实际运行身份使用的系统信任库，Windows
+LocalSystem 使用计算机信任存储。本机 Sunshine 可选择相同系统验证，或精确固定其自带 `cacert.pem`，
+以支持默认无回环 IP SAN 的自签名证书。没有 TOFU、任意证书接受或重定向绕过开关。详见
+[简化配对](https://github.com/isarmg/sunshine-manager-server/blob/v0.10.6/docs/simple-pairing.md)。
 
 ## 7. 当前连续性限制与外部升级边界
 

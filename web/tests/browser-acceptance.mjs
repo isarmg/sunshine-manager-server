@@ -24,14 +24,18 @@ try {
       devices.push(device);return route.fulfill({status:201,json:{device,manager_id:randomUUID(),token:"b".repeat(64)}});
      }return route.fulfill({json:devices});
     }
-    if(path.endsWith("/pairing")&&req.method()==="DELETE"){devices[0].pairing_pending=false;return route.fulfill({status:204})}
+    if(path.endsWith("/pairing")&&req.method()==="DELETE"){
+     if(devices[0].pairing_pending)devices[0].pairing_pending=false;else devices.splice(0,1);
+     return route.fulfill({status:204})
+    }
+    if(path.endsWith("/authorization"))return route.fulfill({json:{authorization_code:"b".repeat(64)}});
     if(path.endsWith("/tasks"))return route.fulfill({json:[]});
     return route.fulfill({json:session});
    });
    await page.goto("http://127.0.0.1:"+server.httpServer.address().port);
    await checkHeaderActions(page, "/sunshine/devices");
    const menuToFirst=await page.evaluate(()=>{
-    const header=document.querySelector(".sarmg-page-header");const first=[...document.querySelectorAll("h2")].find(node=>node.textContent==="实例");
+    const header=document.querySelector(".sarmg-page-header");const first=[...document.querySelectorAll("h2")].find(node=>node.textContent==="实例总览");
     if(!header||!first)throw new Error("Sunshine spacing fixture is incomplete");
     return first.getBoundingClientRect().top-header.getBoundingClientRect().bottom;
    });
@@ -47,7 +51,7 @@ try {
    await dialog.getByRole("button",{name:"创建实例",exact:true}).click();
    await expect(dialog).toHaveCount(0);
    await expect(page.getByRole("complementary")).toHaveCount(0);
-   await page.getByRole("banner").getByRole("button",{name:"实例",exact:true}).click();
+   await page.getByRole("button",{name:"实例列表",exact:true}).click();
    await expect(page.getByRole("region",{name:"Sunshine 实例"}).getByRole("button")).toHaveText("测试 Sunshine");
    const table=page.getByRole("table",{name:"Sunshine 实例列表"});
    await expect(table.locator("tbody tr")).toHaveCount(1);
@@ -57,10 +61,10 @@ try {
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    assert.deepEqual((await new AxeBuilder({page}).withTags(["wcag2a","wcag2aa","wcag21aa"]).analyze()).violations,[]);
    await page.getByRole("button",{name:"选择实例 测试 Sunshine"}).click();
-   await expect(page.getByRole("button",{name:"设备状态",exact:true})).toHaveAttribute("aria-pressed","true");
+   await expect(page.getByRole("button",{name:"详细信息",exact:true})).toHaveAttribute("aria-pressed","true");
    await expect(page.getByText("等待配对",{exact:true})).toBeVisible();
    await expect(page.getByLabel("Sunshine 密码",{exact:true})).toHaveCount(0);
-   await expect(page.getByText("配对码",{exact:true})).toBeVisible();
+   await expect(page.getByText("实例授权码",{exact:true})).toBeVisible();
    for(const theme of ["dark","light"]){
     await page.getByRole("button",{name:theme==="dark"?"切换到深色模式":"切换到浅色模式",exact:true}).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme",theme);
@@ -68,11 +72,14 @@ try {
     assert.deepEqual(violations,[]);
    }
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-   await expect(page.locator("body")).toContainText("不设有效期");
+   await expect(page.locator("body")).toContainText("更换后客户端必须重新配对");
    await page.getByRole("button",{name:"取消配对",exact:true}).click();await page.getByRole("button",{name:"确认",exact:true}).click();
    await expect(page.getByText("配对已取消",{exact:true})).toBeVisible();
-   await expect(page.getByText("配对码",{exact:true})).toHaveCount(0);
-      await checkWebLanguage(page, {"routes":[["instances","Instances"],["status","Device status"],["config","Sunshine configuration"],["tasks","Task history"]],"names":["测试 Sunshine"]});
+   await expect(page.getByText("b".repeat(64),{exact:true})).toBeVisible();
+   await checkWebLanguage(page, {"routes":[["instances","Instance list"],["details","Details"],["logs","Logs"]],"names":["测试 Sunshine"]});
+   await page.getByRole("button",{name:"详细信息",exact:true}).click();
+   await page.getByRole("button",{name:"删除实例",exact:true}).click();await page.getByRole("button",{name:"确认",exact:true}).click();
+   await expect(page.getByText("暂无实例，请新建并注册 客户端。",{exact:true})).toBeVisible();
    await checkHeaderLogout(page, session.csrf_token);
    assert.deepEqual(errors,[]);console.log(engine.name()+": Client registration, name limits, CSRF, default appearance, mobile and WCAG passed");
   }finally{await browser.close();}

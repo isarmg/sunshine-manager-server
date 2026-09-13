@@ -21,6 +21,15 @@ pub struct DeviceView {
 pub struct DeviceName {
     pub name: String,
 }
+#[derive(Debug, Serialize)]
+pub struct ClientAuthorization {
+    pub authorization_code: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateClientAuthorization {
+    pub authorization_code: String,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OperationResolutionRequest {
