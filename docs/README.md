@@ -1,6 +1,6 @@
 # Sunshine Manager 文档总览
 
-本文档只描述 `0.10.7` 当前代码；`schema/generated/current_schema.sql`、`release.json`、Rust 合约与测试是
+本文档只描述 `0.10.8` 当前代码；`schema/generated/current_schema.sql`、`release.json`、Rust 合约与测试是
 机器可执行事实源。
 
 | 分类 | 文档 | 内容 |
