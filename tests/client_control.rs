@@ -151,6 +151,41 @@ async fn rotating_instance_authorization_revokes_client_and_requires_new_code() 
             .is_ok()
     );
 }
+
+#[tokio::test]
+async fn deleting_an_instance_removes_it_and_invalidates_its_client_credential() {
+    let (_dir, pool) = database().await;
+    let ticket = db::create_device(&pool, &secrets(), "delete", "admin")
+        .await
+        .unwrap();
+    let credential = db::random_token();
+    db::enroll(
+        &pool,
+        &ticket.device.id,
+        Uuid::new_v4(),
+        &ticket.token,
+        &credential,
+    )
+    .await
+    .unwrap();
+
+    db::delete_device(&pool, &ticket.device.id, "admin")
+        .await
+        .unwrap();
+
+    assert!(db::get_device(&pool, &ticket.device.id).await.is_err());
+    assert!(db::authenticate_device(&pool, &credential).await.is_err());
+    assert!(db::resolve_pairing(&pool, &ticket.token).await.is_err());
+    let action: String = sqlx::query_scalar(
+        "SELECT action FROM audit_logs WHERE target=? ORDER BY audit_id DESC LIMIT 1",
+    )
+    .bind(&ticket.device.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(action, "device.delete");
+}
+
 #[tokio::test]
 async fn enrollment_is_single_use_hashed_bound_and_revocable() {
     let (_dir, pool) = database().await;

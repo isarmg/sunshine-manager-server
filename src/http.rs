@@ -82,7 +82,10 @@ pub fn router(
 ) -> anyhow::Result<Router> {
     let protected = Router::new()
         .route("/sunshine/devices", get(devices).post(create_device))
-        .route("/sunshine/devices/{id}", patch(rename_device))
+        .route(
+            "/sunshine/devices/{id}",
+            patch(rename_device).delete(delete_device),
+        )
         .route(
             "/sunshine/devices/{id}/authorization",
             get(device_authorization).put(update_device_authorization),
@@ -217,6 +220,14 @@ async fn revoke_device(
     Path(id): Path<String>,
 ) -> AppResult<StatusCode> {
     db::revoke(&state.pool, &id, &actor.subject).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+async fn delete_device(
+    State(state): State<WorkerState>,
+    Extension(actor): Extension<InternalIdentity>,
+    Path(id): Path<String>,
+) -> AppResult<StatusCode> {
+    db::delete_device(&state.pool, &id, &actor.subject).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 async fn device_tasks(

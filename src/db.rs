@@ -263,6 +263,30 @@ pub async fn revoke(pool: &SqlitePool, id: &str, actor: &str) -> AppResult<()> {
     tx.commit().await?;
     Ok(())
 }
+pub async fn delete_device(pool: &SqlitePool, id: &str, actor: &str) -> AppResult<()> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM devices WHERE device_id=?)")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if !exists {
+        return Err(AppError::NotFound("设备不存在".into()));
+    }
+    audit(
+        &mut tx,
+        "device.delete",
+        id,
+        actor,
+        Some("instance permanently deleted; credentials invalidated"),
+    )
+    .await?;
+    sqlx::query("DELETE FROM devices WHERE device_id=?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
 pub async fn enroll(
     pool: &SqlitePool,
     id: &str,

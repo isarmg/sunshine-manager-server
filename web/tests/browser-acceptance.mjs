@@ -25,8 +25,11 @@ try {
      }return route.fulfill({json:devices});
     }
     if(path.endsWith("/pairing")&&req.method()==="DELETE"){
-     if(devices[0].pairing_pending)devices[0].pairing_pending=false;else devices.splice(0,1);
+     devices[0].pairing_pending=false;
      return route.fulfill({status:204})
+    }
+    if(path.match(/\/sunshine\/devices\/[^/]+$/)&&req.method()==="DELETE"){
+     devices.splice(0,1);return route.fulfill({status:204})
     }
     if(path.endsWith("/authorization"))return route.fulfill({json:{authorization_code:"b".repeat(64)}});
     if(path.endsWith("/tasks"))return route.fulfill({json:[]});
@@ -35,7 +38,7 @@ try {
    await page.goto("http://127.0.0.1:"+server.httpServer.address().port);
    await checkHeaderActions(page, "/sunshine/devices");
    const menuToFirst=await page.evaluate(()=>{
-    const header=document.querySelector(".sarmg-page-header");const first=[...document.querySelectorAll("h2")].find(node=>node.textContent==="实例总览");
+    const header=document.querySelector(".sarmg-page-header");const first=[...document.querySelectorAll("h2")].find(node=>node.textContent==="统计");
     if(!header||!first)throw new Error("Sunshine spacing fixture is incomplete");
     return first.getBoundingClientRect().top-header.getBoundingClientRect().bottom;
    });
