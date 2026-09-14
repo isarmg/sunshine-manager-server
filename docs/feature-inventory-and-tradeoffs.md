@@ -1,6 +1,6 @@
 # Sunshine Manager Server 当前功能与取舍清单
 
-本文只描述 `0.10.9` 当前实现。事实源依次为 `src/http.rs::router()`、`protocol/`、`schema/product.sql`、
+本文只描述 `0.10.10` 当前实现。事实源依次为 `src/http.rs::router()`、`protocol/`、`schema/product.sql`、
 Foundation 组合后的 Schema、Release identity 和管理 Web。拆分前由 Server 保存 Sunshine 密码并直接调用
 Sunshine API 的架构已删除，不属于当前能力。
 
@@ -24,7 +24,7 @@ Moonlight ───────────────────────�
 | 能力 | 当前事实 | 关键边界 |
 |---|---|---|
 | Server 平台 | 仅 `x86_64-unknown-linux-gnu` | build、运行时和发行树三层拒绝其他目标 |
-| 软件/API | 0.10.9，管理 API `/api/v2` | 不注册旧 API alias |
+| 软件/API | 0.10.10，管理 API `/api/v2` | 不注册旧 API alias |
 | 数据库 | Schema revision 7，SHA 由 release identity 固定 | 非当前 metadata/DDL 在业务写入前拒绝 |
 | Foundation | Cargo.lock 中所有 Foundation crate 必须来自同一完整 revision | build.rs 自动从锁文件派生运行时 `foundation_revision`，不手写 |
 | 监听 | `127.0.0.1:18104` | 非 loopback 配置直接拒绝，外部 TLS/WSS 由可信入口终止 |
@@ -95,8 +95,8 @@ Sunshine JSON，不管理 apps/clients，也不把管理员输入转换成任意
 ## 8. 数据、发行与明确不提供
 
 - SQLite 单实例运行；启动清除旧在线 session，并恢复运行中 operation 的不确定状态。
-- 产品不内置 migration、backup、restore 或 key rotation。`sarmg-upgrade` 当前也未声明支持 0.10.9；
-  不得使用 Sunshine 0.8.0 适配器处理当前库。
+- 产品不内置 migration、backup、restore 或 key rotation。`sarmg-upgrade` 当前也未声明支持 0.10.10；
+  不得使用 Sunshine 0.8.1 适配器处理当前库。
 - 正式发行树包含 Server binary、Web、systemd、配置示例、README 和 manifest；文件、权限、大小、摘要、
   source revision、Schema 与 Foundation revision 必须形成同一不可变身份。
 - 当前不提供多管理员角色、SSO、Server HA、非 Linux Server、自动 unknown 重试、任意配置字段、

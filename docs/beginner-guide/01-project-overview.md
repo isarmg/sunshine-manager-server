@@ -7,7 +7,7 @@ Server 保存管理员、实例、长期授权码、Client credential 摘要、�
 Sunshine endpoint、用户名/密码、公开证书固定材料和执行日志。两端之间只有当前
 `sunshine-management/1` 协议。
 
-当前软件是 0.10.9，管理 API 为 `/api/v2`，数据库为 revision 7。旧的“Server 保存 Sunshine 密码并
+当前软件是 0.10.10，管理 API 为 `/api/v2`，数据库为 revision 7。旧的“Server 保存 Sunshine 密码并
 直接管理 apps/clients”的实现已删除，不是隐藏能力。
 
 主要入口：`src/http.rs` 看路由与 WSS，`src/db.rs` 看实例，`src/operations.rs` 看持久任务，`protocol/`
