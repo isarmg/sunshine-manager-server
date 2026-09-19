@@ -71,13 +71,14 @@ sunshine-manager identity
 sunshine-manager verify-release --root /opt/isarmg/sunshine-manager/releases/0.10.10
 sunshine-manager doctor
 sunshine-manager admin-create --database-url sqlite:///path/app.db
-sunshine-manager admin-reset-password --database-url sqlite:///path/app.db \
-  --username admin --password '<new-secret>'
+printf '%s\n' '<new-secret>' | sunshine-manager admin-reset-password \
+  --database-url sqlite:///path/app.db --username admin
 ```
 
 管理员写命令需要 maintenance exclusive；先停服务。避免把真实密码留在 Shell history，使用受控 Secret
 注入或临时受保护终端。`admin-create` 只允许数据库中尚无管理员时创建首个账户；已有管理员时它会拒绝，
-不会把“校验现有账户”伪装成新建成功。`admin-reset-password` 只接受 canonical 化后精确匹配的当前 username。
+不会把“校验现有账户”伪装成新建成功。`admin-reset-password` 从标准输入读取一行密码，避免密码进入进程参数，
+并只接受 canonical 化后精确匹配的当前 username。
 
 管理员身份不是邮箱。登录候选必须为 1–64 个可打印 ASCII 字节；Server 只执行 `trim_ascii()` 和
 ASCII 小写化，然后要求持久值为 3–64 字节、首尾是字母/数字且字符只来自 `[a-z0-9._-]`。`@`、Unicode、

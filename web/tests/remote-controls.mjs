@@ -3,22 +3,29 @@ import {chromium,firefox,expect} from "@playwright/test";
 import {preview} from "vite";
 import {randomUUID} from "node:crypto";
 const session={authenticated:true,user_id:"A".repeat(43),username:"admin",role:"admin",csrf_token:"A".repeat(43)};
+const configFields=[
+ {key:"sunshine_name",kind:"text",maximum_length:32,requires_restart:true,supported_sunshine_versions:["2026.914.233613"],operating_systems:["linux_x86_64"]},
+ {key:"qp",kind:"integer",minimum:0,maximum:51,requires_restart:true,supported_sunshine_versions:["2026.914.233613"],operating_systems:["linux_x86_64"]},
+];
 const server=await preview({preview:{host:"127.0.0.1",port:0,strictPort:true}});
 try {for(const engine of [chromium,firefox]){
  const browser=await engine.launch();
  try {
   const page=await browser.newPage({ locale: "zh-CN" });const commands=[];const errors=[];const operations=[];
   page.on("pageerror",e=>errors.push(e.message));
-  const device={id:randomUUID(),name:"游戏主机",registered:true,pairing_pending:false,revoked:false,client_online:true,sunshine_reachable:true,configuration_state:"pending_verification",last_seen_at_micros:Date.now()*1000,capabilities:{restart_allowed:true,managed_fields:["sunshine_name","qp"]},snapshot:{revision:"a".repeat(64),sunshine_version:"2026.516.143833",fields:{sunshine_name:"Original",qp:"28"},effectiveness:"pending_verification"}};
+  const device={id:randomUUID(),name:"游戏主机",registered:true,pairing_pending:false,revoked:false,client_online:true,sunshine_reachable:true,configuration_state:"pending_verification",last_seen_at_micros:Date.now()*1000,capabilities:{protocol:"sunshine-management/1",client_version:"0.1.4",os:"linux_x86_64",sunshine_version:"2026.914.233613",restart_allowed:true,managed_fields:["sunshine_name","qp"]},snapshot:{revision:"a".repeat(64),sunshine_version:"2026.914.233613",fields:{sunshine_name:"Original",qp:"28"},effectiveness:"pending_verification"}};
   await page.route("**/api/v2/**",async route=>{
    const req=route.request();const path=new URL(req.url()).pathname;
+   if(path.endsWith("/sunshine/config-fields"))return route.fulfill({json:configFields});
    if(path.endsWith("/sunshine/devices"))return route.fulfill({json:[device]});
    if(path.endsWith("/authorization"))return route.fulfill({json:{authorization_code:"b".repeat(64)}});
    if(path.endsWith("/tasks")){
     if(req.method()==="POST"){
      const command=req.postDataJSON();commands.push(command);
      assert.equal(req.headers()["x-csrf-token"],session.csrf_token);assert.ok(req.headers()["idempotency-key"]);
-     const operation={operation_id:"op_"+randomUUID(),device_id:device.id,action:"sunshine."+command.kind,state:"succeeded",attempt:1,created_at_micros:Date.now()*1000,updated_at_micros:Date.now()*1000,result:{kind:command.kind==="restart"?"restart_acknowledged":"config_saved",snapshot:device.snapshot},reconciliation:null,resolution:null};
+     const action={read_config:"sunshine.config.read",patch_config:"sunshine.config.patch",restart:"sunshine.restart"}[command.kind];
+     const snapshot={...device.snapshot,effectiveness:command.kind==="patch_config"?"awaiting_restart":"pending_verification"};
+     const operation={operation_id:"op_"+randomUUID(),device_id:device.id,action,state:"succeeded",attempt:1,created_at_micros:Date.now()*1000,updated_at_micros:Date.now()*1000,result:{kind:command.kind==="restart"?"restart_acknowledged":command.kind==="read_config"?"config_read":"config_saved",snapshot},reconciliation:null,resolution:null};
      operations.unshift(operation);return route.fulfill({json:operation});
     }return route.fulfill({json:operations});
    }return route.fulfill({json:session});

@@ -11,7 +11,7 @@ export async function checkWebLanguage(page, { routes, names = [] }) {
   await expect(page.getByRole("button", { name: "Switch to Chinese", exact: true })).toBeVisible();
   for (const [hash, label] of routes) {
     await page.getByRole("button", { name: label, exact: true }).click();
-    await expect.poll(() => new URL(page.url()).hash).toBe("#" + hash);
+    await expect.poll(() => new URL(page.url()).hash).toMatch(new RegExp(`^#${hash}(?:/[0-9a-f-]{36})?$`));
     const text = await page.locator("body").innerText();
     const authored = names.reduce((value, name) => value.replaceAll(name, ""), text);
     assert.doesNotMatch(authored, /\p{Script=Han}/u, "English page must not contain untranslated Chinese UI text");

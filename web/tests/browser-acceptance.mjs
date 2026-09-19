@@ -6,6 +6,7 @@ import AxeBuilder from "@axe-core/playwright";
 import {preview} from "vite";
 import {randomUUID} from "node:crypto";
 const session={authenticated:true,user_id:"A".repeat(43),username:"admin",role:"admin",csrf_token:"A".repeat(43)};
+const configFields=[];
 const server=await preview({preview:{host:"127.0.0.1",port:0,strictPort:true}});
 try {
  for(const engine of [chromium,firefox]){
@@ -15,6 +16,7 @@ try {
    page.on("pageerror",e=>errors.push(e.message));
    await page.route("**/api/v2/**",async route=>{
     const req=route.request();const path=new URL(req.url()).pathname;
+    if(path.endsWith("/sunshine/config-fields"))return route.fulfill({json:configFields});
     if(path.endsWith("/sunshine/devices")){
      if(req.method()==="POST"){
       posts++;assert.equal(req.headers()["x-csrf-token"],session.csrf_token);

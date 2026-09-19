@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::Read as _, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 use sarmg_admin_core::AdministratorStore;
@@ -50,8 +50,6 @@ struct AdminResetPasswordArgs {
     database_url: String,
     #[arg(long)]
     username: String,
-    #[arg(long, hide_env_values = true)]
-    password: String,
 }
 
 #[derive(clap::Args)]
@@ -108,6 +106,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::AdminResetPassword(args) => {
+            let password = read_password_from_stdin()?;
             let maintenance = MaintenanceLock::exclusive(&args.database_url)?;
             let pool = db::open_existing(&maintenance.database_url()).await?;
             let username = sarmg_admin_auth::normalize_administrator_username(&args.username)?;
@@ -115,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
                 sarmg_admin_sqlite::SqliteAdministratorStore::new(pool),
             );
             service
-                .change_administrator_password(&username, &args.password, current_time_micros()?)
+                .change_administrator_password(&username, &password, current_time_micros()?)
                 .await
                 .map_err(|error| anyhow::anyhow!(error))?;
             println!(
@@ -156,6 +155,24 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+fn read_password_from_stdin() -> anyhow::Result<String> {
+    let mut bytes = Vec::new();
+    std::io::stdin().take(1025).read_to_end(&mut bytes)?;
+    anyhow::ensure!(bytes.len() <= 1024, "password input exceeds 1024 bytes");
+    let mut password = String::from_utf8(bytes)?;
+    if password.ends_with('\n') {
+        password.pop();
+        if password.ends_with('\r') {
+            password.pop();
+        }
+    }
+    anyhow::ensure!(
+        !password.contains(['\r', '\n']),
+        "password input must contain exactly one line"
+    );
+    Ok(password)
 }
 
 async fn serve(release_root: Option<&std::path::Path>) -> anyhow::Result<()> {

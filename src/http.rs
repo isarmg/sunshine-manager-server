@@ -81,6 +81,7 @@ pub fn router(
     runtime: sarmg_server_runtime::RuntimeHandle,
 ) -> anyhow::Result<Router> {
     let protected = Router::new()
+        .route("/sunshine/config-fields", get(config_fields))
         .route("/sunshine/devices", get(devices).post(create_device))
         .route(
             "/sunshine/devices/{id}",
@@ -148,6 +149,9 @@ async fn authenticate(
 }
 async fn devices(State(state): State<WorkerState>) -> AppResult<Json<Vec<DeviceView>>> {
     Ok(Json(db::list_devices(&state.pool).await?))
+}
+async fn config_fields() -> Json<&'static [sunshine_client_protocol::config::FieldDefinition]> {
+    Json(sunshine_client_protocol::config::FIELD_DEFINITIONS)
 }
 async fn create_device(
     State(state): State<WorkerState>,
@@ -374,6 +378,10 @@ async fn client_connect(
         .and_then(|value| value.strip_prefix("Bearer "))
         .ok_or(AppError::Unauthorized)?;
     let device = db::authenticate_device(&state.pool, credential).await?;
+    let authenticated_credential_hash = device
+        .credential_hash
+        .clone()
+        .ok_or(AppError::Unauthorized)?;
     let binding = db::binding(&state.pool, &device).await?;
     if headers
         .get("sec-websocket-protocol")
@@ -395,7 +403,9 @@ async fn client_connect(
             let _permit = permit;
             let mut pending = None;
             let session = uuid::Uuid::new_v4().to_string();
-            let _ = serve_client(&state, socket, &binding, &session, &mut pending).await;
+            if let Err(error) = serve_client(&state, socket, &binding, &authenticated_credential_hash, &session, &mut pending).await {
+                tracing::warn!(device_id = %binding.device_id, session_id = %session, error = %error, "client session ended with an error");
+            }
             if let Some(operation) = pending {
                 let _ = state.operations.disconnected(&operation).await;
             }
@@ -434,6 +444,7 @@ async fn serve_client(
     state: &WorkerState,
     mut socket: WebSocket,
     binding: &Binding,
+    authenticated_credential_hash: &[u8],
     session: &str,
     pending: &mut Option<sarmg_operations::StoredOperation>,
 ) -> AppResult<()> {
@@ -448,21 +459,22 @@ async fn serve_client(
         || capabilities.protocol != PROTOCOL
         || !sunshine_client_protocol::is_supported_sunshine_version(&capabilities.sunshine_version)
         || capabilities.client_version.len() > 64
-        || capabilities.managed_fields.len() != sunshine_client_protocol::config::FIELDS.len()
-        || sunshine_client_protocol::config::FIELDS
+        || capabilities.managed_fields.len()
+            != sunshine_client_protocol::config::FIELD_DEFINITIONS.len()
+        || sunshine_client_protocol::config::FIELD_DEFINITIONS
             .iter()
             .any(|field| {
                 !capabilities
                     .managed_fields
                     .iter()
-                    .any(|value| value == field)
+                    .any(|value| value == field.key)
             })
     {
         return Err(AppError::Unauthorized);
     }
     let id = binding.device_id.to_string();
-    let changed=sqlx::query("UPDATE devices SET session_id=?,last_seen_at_micros=?,capabilities_json=? WHERE device_id=? AND installation_id=? AND revoked_at_micros IS NULL AND credential_hash IS NOT NULL")
-        .bind(session).bind(db::now_micros()?).bind(serde_json::to_string(&capabilities).map_err(|_|AppError::Unauthorized)?).bind(&id).bind(binding.installation_id.to_string()).execute(&state.pool).await?.rows_affected();
+    let changed=sqlx::query("UPDATE devices SET session_id=?,last_seen_at_micros=?,capabilities_json=? WHERE device_id=? AND installation_id=? AND revoked_at_micros IS NULL AND credential_hash=?")
+        .bind(session).bind(db::now_micros()?).bind(serde_json::to_string(&capabilities).map_err(|_|AppError::Unauthorized)?).bind(&id).bind(binding.installation_id.to_string()).bind(authenticated_credential_hash).execute(&state.pool).await?.rows_affected();
     if changed != 1 {
         return Err(AppError::Unauthorized);
     }
@@ -487,8 +499,8 @@ async fn serve_client(
                         match message{
                             ClientMessage::Heartbeat{sunshine_reachable,configuration}=>{
                                 if let Some(snapshot)=&configuration{crate::operations::validate_snapshot(snapshot)?;}
-                                sqlx::query("UPDATE devices SET sunshine_reachable=?,health_at_micros=?,snapshot_json=COALESCE(?,snapshot_json) WHERE device_id=? AND session_id=? AND revoked_at_micros IS NULL")
-                                    .bind(sunshine_reachable).bind(db::now_micros()?).bind(configuration.as_ref().map(serde_json::to_string).transpose().map_err(|_|AppError::Unauthorized)?).bind(&id).bind(session).execute(&state.pool).await?;
+                                sqlx::query("UPDATE devices SET sunshine_reachable=?,health_at_micros=?,snapshot_json=COALESCE(?,snapshot_json),configuration_state=CASE WHEN ? IS NULL THEN configuration_state ELSE 'pending_verification' END WHERE device_id=? AND session_id=? AND revoked_at_micros IS NULL")
+                                    .bind(sunshine_reachable).bind(db::now_micros()?).bind(configuration.as_ref().map(serde_json::to_string).transpose().map_err(|_|AppError::Unauthorized)?).bind(configuration.as_ref().map(|_| 1)).bind(&id).bind(session).execute(&state.pool).await?;
                             }
                             ClientMessage::Result{operation_id,report}=>{
                                 let operation=pending.as_ref().filter(|op|op.operation.operation_id==operation_id).ok_or_else(||AppError::BadRequest("Client 结果未匹配当前任务".into()))?;
@@ -506,9 +518,12 @@ async fn serve_client(
                 let current=db::get_device(&state.pool,&id).await?;
                 if current.revoked_at_micros.is_some()||current.session_id.as_deref()!=Some(session){let _=send(&mut socket,ManagerMessage::Revoked{}).await;return Err(AppError::Unauthorized);}
                 if pending.is_none(){
-                    let (operation,mode)=if let Some(unknown)=state.operations.uncertain(&id).await?{
-                        if inspected.contains(&unknown.operation.operation_id){continue;}
-                        inspected.insert(unknown.operation.operation_id.clone());(Some(unknown),DeliveryMode::InspectOnly)
+                    let (operation,mode)=if let Some(unknown)=state.operations.uncertain(&id, &binding.installation_id).await?{
+                        if inspected.insert(unknown.operation.operation_id.clone()) {
+                            (Some(unknown),DeliveryMode::InspectOnly)
+                        } else {
+                            (state.operations.next(&id,session).await?,DeliveryMode::Execute)
+                        }
                     }else{(state.operations.next(&id,session).await?,DeliveryMode::Execute)};
                     if let Some(operation)=operation{
                         let task=state.operations.task(&operation)?;

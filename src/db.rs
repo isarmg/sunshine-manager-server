@@ -171,8 +171,9 @@ pub async fn rotate_authorization(
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let changed = sqlx::query(
         "UPDATE devices SET enrollment_hash=?,authorization_code_enc=?,installation_id=NULL,\
-         credential_hash=NULL,session_id=NULL,last_seen_at_micros=NULL,health_at_micros=NULL,\
-         sunshine_reachable=NULL,capabilities_json=NULL,updated_at_micros=? \
+        credential_hash=NULL,session_id=NULL,last_seen_at_micros=NULL,health_at_micros=NULL,\
+         sunshine_reachable=NULL,capabilities_json=NULL,snapshot_json=NULL,saved_revision=NULL,\
+         configuration_state='unknown',updated_at_micros=? \
          WHERE device_id=? AND revoked_at_micros IS NULL",
     )
     .bind(token_hash(authorization_code).as_slice())
@@ -213,25 +214,13 @@ pub async fn cancel_pairing(pool: &SqlitePool, id: &str, actor: &str) -> AppResu
         return Err(AppError::NotFound("设备不存在".into()));
     };
     if enrollment_hash.is_none() && installation_id.is_none() && revoked_at.is_none() {
-        audit(
-            &mut tx,
-            "device.delete",
-            id,
-            actor,
-            Some("cancelled pairing instance permanently deleted"),
-        )
-        .await?;
-        sqlx::query("DELETE FROM devices WHERE device_id=?")
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
         tx.commit().await?;
         return Ok(());
     }
     let changed = sqlx::query("UPDATE devices SET enrollment_hash=NULL,updated_at_micros=? WHERE device_id=? AND installation_id IS NULL AND revoked_at_micros IS NULL AND enrollment_hash IS NOT NULL")
         .bind(now_micros()?).bind(id).execute(&mut *tx).await?.rows_affected();
     if changed != 1 {
-        return Err(AppError::Conflict("配对码已使用或已取消".into()));
+        return Err(AppError::Conflict("配对码已使用".into()));
     }
     audit(&mut tx, "device.pairing.cancel", id, actor, None).await?;
     tx.commit().await?;

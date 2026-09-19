@@ -17,6 +17,8 @@ use sunshine_client_protocol::{
 use tokio::sync::{Notify, watch};
 use uuid::Uuid;
 
+const RESTART_EXECUTION_WINDOW_MICROS: i64 = 15 * 60 * 1_000_000;
+
 #[derive(Clone)]
 pub struct OperationManager {
     pub pool: sqlx::SqlitePool,
@@ -49,8 +51,15 @@ pub struct OperationView {
     pub reconciliation: Option<Report>,
     pub resolution: Option<String>,
 }
-pub fn namespace(device_id: &str) -> String {
-    format!("sunshine.client.v1.{device_id}")
+fn namespace(device_id: &str, installation_id: &Uuid, resource: &str) -> String {
+    format!("sunshine.client.v2.{device_id}.{installation_id}.{resource}")
+}
+fn resource(command: &Command) -> &'static str {
+    if matches!(command, Command::ReadConfig {}) {
+        "read"
+    } else {
+        "write"
+    }
 }
 pub fn action(command: &Command) -> &'static str {
     match command {
@@ -95,7 +104,12 @@ pub fn decode_task(secrets: &SecretBox, stored: &StoredOperation) -> AppResult<T
     };
     if action(&task.command) != stored.action
         || task.binding.device_id.to_string() != stored.operation.target_key
-        || stored.operation.namespace != namespace(&stored.operation.target_key)
+        || stored.operation.namespace
+            != namespace(
+                &stored.operation.target_key,
+                &task.binding.installation_id,
+                resource(&task.command),
+            )
         || task.validate(&task.binding, true).is_err()
     {
         return Err(AppError::Crypto);
@@ -166,7 +180,11 @@ impl OperationManager {
         };
         task.validate(&binding, true)
             .map_err(|_| AppError::BadRequest("业务指令不符合白名单、权限或修订要求".into()))?;
-        let plaintext = serde_json::to_string(&Request { binding, command }).map_err(internal)?;
+        let plaintext = serde_json::to_string(&Request {
+            binding: binding.clone(),
+            command,
+        })
+        .map_err(internal)?;
         let mut digest = Sha256::new();
         for part in [
             actor.as_bytes(),
@@ -188,7 +206,7 @@ impl OperationManager {
         let now = db::now_micros()?;
         let value = NewOperation {
             operation_id,
-            namespace: namespace(id),
+            namespace: namespace(id, &binding.installation_id, resource(&task.command)),
             target_key: id.into(),
             action: action(&task.command).into(),
             idempotency_digest: digest.finalize().into(),
@@ -254,7 +272,7 @@ impl OperationManager {
         self.view(stored).await
     }
     pub async fn list_for_actor(&self, actor: &str, device: &str) -> AppResult<Vec<OperationView>> {
-        let ids:Vec<String>=sqlx::query_scalar("SELECT operation_id FROM _sarmg_operations WHERE target_key=? AND json_extract(CAST(request_payload AS TEXT),'$.actor')=? ORDER BY created_at_micros DESC LIMIT 50").bind(device).bind(actor).fetch_all(&self.pool).await?;
+        let ids:Vec<String>=sqlx::query_scalar("SELECT operation_id FROM _sarmg_operations WHERE target_key=? AND json_extract(CAST(request_payload AS TEXT),'$.actor')=? AND state IN ('pending','running','unknown','dead_letter') UNION SELECT operation_id FROM (SELECT operation_id,created_at_micros FROM _sarmg_operations WHERE target_key=? AND json_extract(CAST(request_payload AS TEXT),'$.actor')=? ORDER BY created_at_micros DESC LIMIT 50) LIMIT 150").bind(device).bind(actor).bind(device).bind(actor).fetch_all(&self.pool).await?;
         let mut views = Vec::new();
         for id in ids {
             views.push(self.get_for_actor(actor, &id).await?);
@@ -316,29 +334,81 @@ impl OperationManager {
         Ok(count)
     }
     pub async fn next(&self, device: &str, owner: &str) -> AppResult<Option<StoredOperation>> {
-        let now = db::now_micros()?;
-        // Linearize authorization and claim with revocation/session replacement. A task
-        // already claimed before revocation can be in flight; revocation cannot undo it.
-        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM devices WHERE device_id=? AND session_id=? AND revoked_at_micros IS NULL AND credential_hash IS NOT NULL)")
-            .bind(device).bind(owner).fetch_one(&mut *tx).await?;
-        if !valid {
-            return Err(AppError::Unauthorized);
+        loop {
+            let now = db::now_micros()?;
+            // Linearize authorization and claim with revocation/session replacement. A task
+            // already claimed before revocation can be in flight; revocation cannot undo it.
+            let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+            let installation: String = sqlx::query_scalar("SELECT installation_id FROM devices WHERE device_id=? AND session_id=? AND revoked_at_micros IS NULL AND credential_hash IS NOT NULL")
+                .bind(device).bind(owner).fetch_optional(&mut *tx).await?.ok_or(AppError::Unauthorized)?;
+            let installation = Uuid::parse_str(&installation).map_err(internal)?;
+            let already_running: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM _sarmg_operations WHERE target_key=? AND state='running')",
+            )
+            .bind(device)
+            .fetch_one(&mut *tx)
+            .await?;
+            if already_running {
+                tx.commit().await?;
+                return Ok(None);
+            }
+            let mut claimed = SqliteOperationStore::claim_next_in(
+                &mut tx,
+                &namespace(device, &installation, "read"),
+                owner,
+                now,
+                now + 120_000_000,
+            )
+            .await
+            .map_err(internal)?;
+            if claimed.is_none() {
+                claimed = SqliteOperationStore::claim_next_in(
+                    &mut tx,
+                    &namespace(device, &installation, "write"),
+                    owner,
+                    now,
+                    now + 120_000_000,
+                )
+                .await
+                .map_err(internal)?;
+            }
+            tx.commit().await?;
+            let Some(claimed) = claimed else {
+                return Ok(None);
+            };
+            if claimed.action == "sunshine.restart"
+                && claimed
+                    .created_at_micros
+                    .saturating_add(RESTART_EXECUTION_WINDOW_MICROS)
+                    <= db::now_micros()?
+            {
+                let mut expired = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+                SqliteOperationStore::apply_transition_owned_in(
+                    &mut expired,
+                    &claimed.operation.operation_id,
+                    owner,
+                    Transition::Fail {
+                        code: "execution_deadline_expired".into(),
+                        retryable: false,
+                        retry_not_before_micros: db::now_micros()?,
+                    },
+                    None,
+                    db::now_micros()?,
+                )
+                .await
+                .map_err(internal)?;
+                expired.commit().await?;
+                continue;
+            }
+            return Ok(Some(claimed));
         }
-        let claimed = SqliteOperationStore::claim_next_in(
-            &mut tx,
-            &namespace(device),
-            owner,
-            now,
-            now + 120_000_000,
-        )
-        .await
-        .map_err(internal)?;
-        tx.commit().await?;
-        Ok(claimed)
     }
-    pub async fn uncertain(&self, device: &str) -> AppResult<Option<StoredOperation>> {
-        let id:Option<String>=sqlx::query_scalar("SELECT operation_id FROM _sarmg_operations WHERE namespace=? AND state='unknown' ORDER BY created_at_micros LIMIT 1").bind(namespace(device)).fetch_optional(&self.pool).await?;
+    pub async fn uncertain(
+        &self,
+        device: &str,
+        installation: &Uuid,
+    ) -> AppResult<Option<StoredOperation>> {
+        let id:Option<String>=sqlx::query_scalar("SELECT operation_id FROM _sarmg_operations WHERE namespace=? AND state='unknown' ORDER BY created_at_micros LIMIT 1").bind(namespace(device, installation, "write")).fetch_optional(&self.pool).await?;
         match id {
             Some(id) => self.store.get(&id).await.map_err(internal),
             None => Ok(None),
@@ -390,6 +460,8 @@ impl OperationManager {
                 Some(&stored.operation.operation_id),
             )
             .await?;
+            tx.commit().await?;
+            return Ok(());
         } else {
             let transition = match &report {
                 Report::ConfigRead { .. }
@@ -426,7 +498,7 @@ impl OperationManager {
         }
         match &report {
             Report::ConfigRead { snapshot } => {
-                sqlx::query("UPDATE devices SET snapshot_json=? WHERE device_id=?")
+                sqlx::query("UPDATE devices SET snapshot_json=?,configuration_state='pending_verification' WHERE device_id=?")
                     .bind(serde_json::to_string(snapshot).map_err(internal)?)
                     .bind(&stored.operation.target_key)
                     .execute(&mut *tx)
@@ -509,7 +581,7 @@ pub fn validate_snapshot(snapshot: &ConfigSnapshot) -> AppResult<()> {
         .map_err(|_| AppError::BadRequest("Client 配置修订无效".into()))?;
     if !sunshine_client_protocol::is_supported_sunshine_version(&snapshot.sunshine_version)
         || snapshot.fields.iter().any(|(key, value)| {
-            !sunshine_client_protocol::config::FIELDS.contains(&key.as_str()) || value.len() > 512
+            !sunshine_client_protocol::config::contains_field(key) || value.len() > 512
         })
     {
         return Err(AppError::BadRequest("Client 配置响应无效".into()));

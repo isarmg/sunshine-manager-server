@@ -11,6 +11,18 @@ Sunshine 用户名、密码和其自带 `cacert.pem` 仅在 Client 本机配置�
 | 详细信息 | 查看/更换授权码，显示 Client 在线、Sunshine 可达、配置状态，编辑配置并可永久删除实例 |
 | 日志 | 查询持久操作及结果，按现有规则核对不确定结果 |
 
+## 配置字段合同
+
+当前受管字段由 `sunshine-client-protocol::config::FIELD_DEFINITIONS` 唯一定义。每项同时声明类型、
+数值范围或枚举、最大长度、是否需要重启、已验证的 Sunshine 版本、适用操作系统及硬件前置条件。
+协议校验、握手字段集合和管理页都消费这份定义；管理页通过受保护的
+`GET /api/v2/sunshine/config-fields` 获取定义，并与 Client 上报的 `managed_fields`、Sunshine 版本和
+操作系统取交集。TypeScript 只保留翻译标签，不再复制范围和选项。
+
+新增字段必须先进入该定义并完成对应 Client 版本的真实 Sunshine 验收。字段元数据出现在 Server
+源码中不表示旧 Client 自动获得能力；协议包仍按发布提交固定，Server 与 Client 发布时必须更新同一
+协议提交并运行完整链路测试。
+
 当前仅开放 `read_config`、`patch_config` 和 `restart`。没有应用启动/准备命令编辑、
 Moonlight PIN 管理、任意文件写入、日志透传、任意 HTTP 代理或自动下载安装入口。
 Client 管理设备配对不是 Sunshine–Moonlight 串流配对，不改变原有串流链路。
@@ -24,6 +36,7 @@ Client 管理设备配对不是 Sunshine–Moonlight 串流配对，不改变原
 
 保存成功只表示配置文件已保存，页面显示等待重启。重启必须同时有 Client 本机授权和
 管理员逐次确认，不自动打断串流。重启后重新核对服务与配置；无法证明运行时生效的设置仍显示待验证。
+重启确认自创建操作起只在 15 分钟内允许派发；设备在期限后才上线时，Server 将操作标记为执行期限已过，必须由管理员重新查看当前修订并再次确认。只读与配置保存任务不套用该短期限。
 
 浏览器通过管理员 Session、CSRF 和 `/api/v2/sunshine/devices/{id}/tasks` 提交业务指令。
 202 只表示任务已持久化，并不表示执行成功。任务复用 Foundation 的

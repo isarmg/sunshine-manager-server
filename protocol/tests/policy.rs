@@ -60,6 +60,30 @@ fn credentials_commands_network_and_paths_are_never_managed_fields() {
 }
 
 #[test]
+fn field_definitions_are_unique_and_drive_validation_metadata() {
+    let definitions = sunshine_client_protocol::config::FIELD_DEFINITIONS;
+    let keys = definitions
+        .iter()
+        .map(|field| field.key)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(keys.len(), definitions.len());
+    for field in definitions {
+        assert!(field.requires_restart);
+        assert_eq!(
+            field.supported_sunshine_versions,
+            sunshine_client_protocol::SUPPORTED_SUNSHINE_VERSIONS
+        );
+        assert!(!field.operating_systems.is_empty());
+    }
+    let json = serde_json::to_value(definitions).unwrap();
+    assert_eq!(json.as_array().unwrap().len(), definitions.len());
+    assert_eq!(
+        json.as_array().unwrap()[0]["maximum_length"],
+        serde_json::json!(32)
+    );
+}
+
+#[test]
 fn field_types_ranges_and_config_line_injection_are_rejected() {
     for value in [
         FieldValue::Integer(-1),

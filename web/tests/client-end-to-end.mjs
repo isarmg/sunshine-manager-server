@@ -50,7 +50,7 @@ try {
  sunshine=httpsServer(sunshineTls,async(req,res)=>{
   const json=value=>{res.setHeader("content-type","application/json");res.end(JSON.stringify(value))};
   if(req.headers.authorization!=="Basic "+Buffer.from("fixture:local-only-password").toString("base64")){res.statusCode=401;return json({status:false});}
-  if(req.method==="GET"&&req.url==="/api/config")return json({status:true,platform:"linux",version:"2026.516.143833",...config});
+  if(req.method==="GET"&&req.url==="/api/config")return json({status:true,platform:"linux",version:"2026.914.233613",...config});
   if(req.method==="POST"&&req.url==="/api/config"){
    let body="";for await(const chunk of req)body+=chunk;
    config=JSON.parse(body);writes++;return json({status:true});
@@ -96,7 +96,7 @@ try {
    await expect.poll(async()=>(await device()).client_online,{timeout:20000}).toBe(true);
    await expect.poll(async()=>(await device()).sunshine_reachable,{timeout:20000}).toBe(true);
    await page.getByRole("button",{name:"刷新",exact:true}).click();
-   await page.getByRole("button",{name:"Sunshine 配置",exact:true}).click();
+   await expect(page.getByRole("button",{name:"详细信息",exact:true})).toHaveAttribute("aria-pressed","true");
    await page.getByLabel("Sunshine 名称", { exact: true }).fill("网页保存");
    await page.getByRole("button",{name:"预览变更",exact:true}).click();
    const queued=page.waitForResponse(r=>r.url().endsWith("/tasks")&&r.request().method()==="POST");

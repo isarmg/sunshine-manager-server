@@ -380,7 +380,12 @@ async fn claims_are_serial_session_fenced_and_revocation_stops_new_work() {
             .state,
         OperationState::Unknown
     );
-    assert!(ops.next(&id, "s2").await.unwrap().is_none());
+    let independent_write = ops.next(&id, "s2").await.unwrap().unwrap();
+    assert!(matches!(
+        ops.task(&independent_write).unwrap().command,
+        Command::Restart { .. }
+    ));
+    ops.disconnected(&independent_write).await.unwrap();
     db::revoke(&pool, &id, "admin").await.unwrap();
     assert!(ops.next(&id, "s2").await.is_err());
     assert!(
@@ -396,7 +401,15 @@ async fn unknown_reconciliation_is_evidence_not_a_second_state_machine() {
     let (id, _) = registered(&pool).await;
     let ops = manager(&pool);
     let queued = ops
-        .enqueue("admin", &id, "one", Command::ReadConfig {})
+        .enqueue(
+            "admin",
+            &id,
+            "one",
+            Command::Restart {
+                expected_revision: "a".repeat(64),
+                administrator_confirmed: true,
+            },
+        )
         .await
         .unwrap();
     session(&pool, &id, "s1").await;
@@ -407,7 +420,13 @@ async fn unknown_reconciliation_is_evidence_not_a_second_state_machine() {
             .is_err()
     );
     ops.disconnected(&claimed).await.unwrap();
-    let unknown = ops.uncertain(&id).await.unwrap().unwrap();
+    let installation_id = db::get_device(&pool, &id)
+        .await
+        .unwrap()
+        .installation_id
+        .and_then(|value| Uuid::parse_str(&value).ok())
+        .unwrap();
+    let unknown = ops.uncertain(&id, &installation_id).await.unwrap().unwrap();
     ops.complete(
         &unknown,
         "s1",
@@ -434,6 +453,45 @@ async fn unknown_reconciliation_is_evidence_not_a_second_state_machine() {
             .unwrap()
             .view(db::now_micros().unwrap())
             .client_online
+    );
+}
+
+#[tokio::test]
+async fn stale_restart_authorization_expires_before_delivery() {
+    let (_dir, pool) = database().await;
+    let (id, _) = registered(&pool).await;
+    let ops = manager(&pool);
+    let queued = ops
+        .enqueue(
+            "admin",
+            &id,
+            "restart-once",
+            Command::Restart {
+                expected_revision: "a".repeat(64),
+                administrator_confirmed: true,
+            },
+        )
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE _sarmg_operations SET created_at_micros=created_at_micros-? WHERE operation_id=?",
+    )
+    .bind(16_i64 * 60 * 1_000_000)
+    .bind(&queued.operation_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    session(&pool, &id, "s1").await;
+    assert!(ops.next(&id, "s1").await.unwrap().is_none());
+    let state: (String, Option<String>) =
+        sqlx::query_as("SELECT state,error_code FROM _sarmg_operations WHERE operation_id=?")
+            .bind(&queued.operation_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        state,
+        ("failed".into(), Some("execution_deadline_expired".into()))
     );
 }
 
