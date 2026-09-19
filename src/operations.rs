@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{sync::Arc, time::Duration};
 use sunshine_client_protocol::{
-    Binding, Command, ConfigSnapshot, Effectiveness, PROTOCOL, Permission, Report, Task,
+    Binding, Capabilities, Command, ConfigSnapshot, PROTOCOL, Permission, Report, Task,
 };
 use tokio::sync::{Notify, watch};
 use uuid::Uuid;
@@ -55,7 +55,16 @@ fn namespace(device_id: &str, installation_id: &Uuid, resource: &str) -> String 
     format!("sunshine.client.v2.{device_id}.{installation_id}.{resource}")
 }
 fn resource(command: &Command) -> &'static str {
-    if matches!(command, Command::ReadConfig {}) {
+    if matches!(
+        command,
+        Command::ReadConfig {}
+            | Command::ListApplications {}
+            | Command::ListPairedClients {}
+            | Command::ReadLogs { .. }
+            | Command::ReadDiagnostics {}
+            | Command::ReadVirtualInputStatus {}
+            | Command::ReadServiceStatus {}
+    ) {
         "read"
     } else {
         "write"
@@ -66,6 +75,22 @@ pub fn action(command: &Command) -> &'static str {
         Command::ReadConfig {} => "sunshine.config.read",
         Command::PatchConfig { .. } => "sunshine.config.patch",
         Command::Restart { .. } => "sunshine.restart",
+        Command::ListApplications {} => "sunshine.applications.list",
+        Command::SaveApplication { .. } => "sunshine.applications.save",
+        Command::DeleteApplication { .. } => "sunshine.applications.delete",
+        Command::CloseApplication { .. } => "sunshine.applications.close",
+        Command::UploadCover { .. } => "sunshine.applications.cover.upload",
+        Command::SubmitPairingPin { .. } => "sunshine.pairing.pin.submit",
+        Command::ListPairedClients {} => "sunshine.pairing.clients.list",
+        Command::SetPairedClientEnabled { .. } => "sunshine.pairing.clients.update",
+        Command::UnpairClient { .. } => "sunshine.pairing.clients.unpair",
+        Command::UnpairAllClients { .. } => "sunshine.pairing.clients.unpair_all",
+        Command::ReadLogs { .. } => "sunshine.logs.read",
+        Command::ReadDiagnostics {} => "sunshine.diagnostics.read",
+        Command::ReadVirtualInputStatus {} => "sunshine.virtual_input.read",
+        Command::RunMaintenance { .. } => "sunshine.maintenance.run",
+        Command::ReadServiceStatus {} => "sunshine.service.read",
+        Command::ControlService { .. } => "sunshine.service.control",
     }
 }
 fn permission(command: &Command) -> Permission {
@@ -73,6 +98,23 @@ fn permission(command: &Command) -> Permission {
         Command::ReadConfig {} => Permission::ReadConfig,
         Command::PatchConfig { .. } => Permission::WriteConfig,
         Command::Restart { .. } => Permission::Restart,
+        Command::ListApplications {} => Permission::ReadApplications,
+        Command::SaveApplication { .. }
+        | Command::DeleteApplication { .. }
+        | Command::CloseApplication { .. }
+        | Command::UploadCover { .. } => Permission::ManageApplications,
+        Command::SubmitPairingPin { .. }
+        | Command::ListPairedClients {}
+        | Command::SetPairedClientEnabled { .. }
+        | Command::UnpairClient { .. }
+        | Command::UnpairAllClients { .. } => Permission::ManagePairing,
+        Command::ReadLogs { .. }
+        | Command::ReadDiagnostics {}
+        | Command::ReadVirtualInputStatus {} => Permission::ReadDiagnostics,
+        Command::RunMaintenance { .. } => Permission::MaintainSunshine,
+        Command::ReadServiceStatus {} | Command::ControlService { .. } => {
+            Permission::ControlService
+        }
     }
 }
 fn internal(error: impl Into<anyhow::Error>) -> AppError {
@@ -110,7 +152,6 @@ pub fn decode_task(secrets: &SecretBox, stored: &StoredOperation) -> AppResult<T
                 &task.binding.installation_id,
                 resource(&task.command),
             )
-        || task.validate(&task.binding, true).is_err()
     {
         return Err(AppError::Crypto);
     }
@@ -170,6 +211,11 @@ impl OperationManager {
                 .and_then(|id| Uuid::parse_str(id).ok())
                 .ok_or_else(|| AppError::Conflict("请先注册 Client".into()))?,
         };
+        let capabilities: Capabilities = device
+            .capabilities_json
+            .as_deref()
+            .ok_or_else(|| AppError::Conflict("Client 尚未上报管理能力".into()))
+            .and_then(|value| serde_json::from_str(value).map_err(internal))?;
         let operation_id = format!("op_{}", Uuid::new_v4());
         let task = Task {
             protocol: PROTOCOL.into(),
@@ -178,7 +224,7 @@ impl OperationManager {
             permission: permission(&command),
             command: command.clone(),
         };
-        task.validate(&binding, true)
+        task.validate(&binding, &capabilities)
             .map_err(|_| AppError::BadRequest("业务指令不符合白名单、权限或修订要求".into()))?;
         let plaintext = serde_json::to_string(&Request {
             binding: binding.clone(),
@@ -376,7 +422,7 @@ impl OperationManager {
             let Some(claimed) = claimed else {
                 return Ok(None);
             };
-            if claimed.action == "sunshine.restart"
+            if resource(&self.task(&claimed)?.command) == "write"
                 && claimed
                     .created_at_micros
                     .saturating_add(RESTART_EXECUTION_WINDOW_MICROS)
@@ -385,8 +431,7 @@ impl OperationManager {
                 let mut expired = self.pool.begin_with("BEGIN IMMEDIATE").await?;
                 SqliteOperationStore::apply_transition_owned_in(
                     &mut expired,
-                    &claimed.operation.operation_id,
-                    owner,
+                    &claimed.operation,
                     Transition::Fail {
                         code: "execution_deadline_expired".into(),
                         retryable: false,
@@ -466,7 +511,21 @@ impl OperationManager {
             let transition = match &report {
                 Report::ConfigRead { .. }
                 | Report::ConfigSaved { .. }
-                | Report::RestartAcknowledged { .. } => Transition::Succeed,
+                | Report::RestartAcknowledged { .. }
+                | Report::ApplicationsRead { .. }
+                | Report::ApplicationSaved { .. }
+                | Report::ApplicationDeleted { .. }
+                | Report::ApplicationClosed {}
+                | Report::CoverUploaded { .. }
+                | Report::PairingPinSubmitted {}
+                | Report::PairedClientsRead { .. }
+                | Report::PairedClientUpdated { .. }
+                | Report::LogsRead { .. }
+                | Report::DiagnosticsRead { .. }
+                | Report::VirtualInputStatusRead { .. }
+                | Report::MaintenanceCompleted { .. }
+                | Report::ServiceStatusRead { .. }
+                | Report::ServiceControlled { .. } => Transition::Succeed,
                 Report::Unknown { .. } => Transition::MarkIndeterminate {
                     code: "client_uncertain".into(),
                 },
@@ -483,12 +542,7 @@ impl OperationManager {
             };
             SqliteOperationStore::apply_transition_owned_in(
                 &mut tx,
-                &stored.operation.operation_id,
-                stored
-                    .operation
-                    .lease_owner
-                    .as_deref()
-                    .ok_or_else(|| internal(anyhow::anyhow!("missing lease owner")))?,
+                &stored.operation,
                 transition,
                 Some(&bytes),
                 db::now_micros()?,
@@ -589,28 +643,6 @@ pub fn validate_snapshot(snapshot: &ConfigSnapshot) -> AppResult<()> {
     Ok(())
 }
 fn validate_report(command: &Command, report: &Report) -> AppResult<()> {
-    let valid = match (command, report) {
-        (Command::ReadConfig {}, Report::ConfigRead { snapshot }) => {
-            validate_snapshot(snapshot)?;
-            snapshot.effectiveness == Effectiveness::PendingVerification
-        }
-        (Command::PatchConfig { .. }, Report::ConfigSaved { snapshot }) => {
-            validate_snapshot(snapshot)?;
-            snapshot.effectiveness == Effectiveness::AwaitingRestart
-        }
-        (Command::Restart { .. }, Report::RestartAcknowledged { snapshot }) => {
-            validate_snapshot(snapshot)?;
-            snapshot.effectiveness == Effectiveness::PendingVerification
-        }
-        (_, Report::Conflict { actual_revision }) => {
-            sunshine_client_protocol::validate_revision(actual_revision).is_ok()
-        }
-        (_, Report::Rejected { .. } | Report::Unknown { .. }) => true,
-        _ => false,
-    };
-    if valid {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest("Client 结果与业务指令不符".into()))
-    }
+    sunshine_client_protocol::validate_report(command, report)
+        .map_err(|_| AppError::BadRequest("Client 结果与业务指令不符".into()))
 }

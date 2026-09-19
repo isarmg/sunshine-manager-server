@@ -1,13 +1,13 @@
-# 简化配对（Server 0.10.10 / Client 0.1.0-rc.7）
+# 简化配对（Server 0.11.0 / Client 0.2.0）
 
 客户端 UI 仅填写 Server 地址、256-bit 实例授权码、本机 Sunshine 回环地址/端口及账号密码；使用 Sunshine
 自带证书时再选择其配置项 `cert` 对应的 `cacert.pem`。Manager ID、设备 ID 不再是用户输入项。客户端与
 Server 需同时部署支持本流程的版本。
 
-`POST /sunshine-client/v1/pairing` 接受唯一字段 `authorization_code`，返回 `manager_id`、`device_id`。
+`POST /sunshine-client/v2/pairing` 接受唯一字段 `authorization_code`，返回 `manager_id`、`device_id`。
 沿用 Client 的可信 HTTPS 入口限制、无 Cookie/Origin、16 KiB 请求上限和 `Cache-Control: no-store`。
 查询不消费授权码；仅匹配待配对、未撤销且未取消的实例摘要。错误授权码统一拒绝，不回显秘密。
-真正注册仍通过 `/sunshine-client/v1/enroll` 原子绑定独立设备凭据；授权码不会被删除。查询后发生取消、撤销或授权码轮换会使注册失败。
+真正注册仍通过 `/sunshine-client/v2/enroll` 原子绑定独立设备凭据；授权码不会被删除。查询后发生取消、撤销或授权码轮换会使注册失败。
 客户端在注册前持久化独立随机凭据，回执丢失仍使用原有 identity 查询恢复，不创建另一套任务状态机。Server 更换授权码会撤销当前凭据；Client 先用新码验证仍为原实例，再通过显式 `pair replace` 重新绑定。
 
 Manager HTTPS/WSS 始终使用系统信任库并验证名称；Windows LocalSystem 服务使用计算机信任上下文。

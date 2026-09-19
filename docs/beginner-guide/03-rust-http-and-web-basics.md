@@ -1,7 +1,7 @@
 # 03. Rust、HTTP 与 Web
 
 管理路由位于 `/api/v2/sunshine/*`，只接受 Foundation 管理员 Session；写请求还需要 CSRF 与同源验证。
-Client 路由位于 `/sunshine-client/v1/*`，不接受浏览器 Cookie/Origin，只信任同机 TLS ingress 提供的 HTTPS
+Client 路由位于 `/sunshine-client/v2/*`，不接受浏览器 Cookie/Origin，只信任同机 TLS ingress 提供的 HTTPS
 事实。两组身份域不能互换。
 
 所有 JSON DTO 拒绝未知字段并限制 64 KiB 消息。HTTP handler 只验证、查询或持久化任务；它不建立到

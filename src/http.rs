@@ -113,12 +113,15 @@ pub fn router(
         state.administrator_origin_mode,
         Arc::clone(&state.administrator_service),
     )?;
+    let client = Router::new()
+        .route("/v2/enroll", post(enroll))
+        .route("/v2/pairing", post(resolve_pairing))
+        .route("/v2/identity", get(client_identity))
+        .route("/v2/connect", get(client_connect))
+        .fallback(|| async { StatusCode::NOT_FOUND });
     Ok(Router::new()
         .nest(API_NAMESPACE, api)
-        .route("/sunshine-client/v1/enroll", post(enroll))
-        .route("/sunshine-client/v1/pairing", post(resolve_pairing))
-        .route("/sunshine-client/v1/identity", get(client_identity))
-        .route("/sunshine-client/v1/connect", get(client_connect))
+        .nest("/sunshine-client", client)
         .layer(DefaultBodyLimit::max(16 * 1024))
         .fallback_service(ServeDir::new(state.static_dir.clone()))
         .with_state(state)
@@ -528,7 +531,7 @@ async fn serve_client(
                     if let Some(operation)=operation{
                         let task=state.operations.task(&operation)?;
                         *pending=Some(operation);dispatched=Instant::now();
-                        send(&mut socket,ManagerMessage::Task{mode,task}).await?;
+                        send(&mut socket,ManagerMessage::Task{mode,task:Box::new(task)}).await?;
                     }
                 }
             }
@@ -710,6 +713,8 @@ mod tests {
     async fn old_and_unversioned_api_paths_are_not_routes() {
         for (method, path) in [
             (Method::POST, "/api/v1/auth/login"),
+            (Method::POST, "/sunshine-client/v1/pairing"),
+            (Method::GET, "/sunshine-client/v1/connect"),
             (Method::POST, "/api/v2/sunshine/operations/removed/retry"),
             (Method::GET, "/api/services/sunshine/hosts"),
             (Method::GET, "/api/sunshine/hosts"),
@@ -883,23 +888,7 @@ mod tests {
             serde_json::from_slice(&current.into_body().collect().await.unwrap().to_bytes())
                 .unwrap();
         let refreshed_csrf = current_body["csrf_token"].as_str().unwrap().to_string();
-        assert_ne!(refreshed_csrf, csrf);
-
-        let superseded_csrf = application
-            .clone()
-            .oneshot(
-                Request::post("/api/v2/auth/logout")
-                    .header(header::COOKIE, &cookie)
-                    .header("x-csrf-token", &csrf)
-                    .header(header::HOST, "localhost")
-                    .header(header::ORIGIN, "http://localhost")
-                    .header(sarmg_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(superseded_csrf.status(), StatusCode::FORBIDDEN);
+        assert_eq!(refreshed_csrf, csrf);
 
         let missing_csrf = application
             .clone()

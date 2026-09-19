@@ -4,16 +4,18 @@
 [sunshine-manager-client](https://github.com/isarmg/sunshine-manager-client) 仓库，固定适配已修复安全问题的 Sunshine 官方 v2026.914.233613；旧的 2026.516 与 2026.906 构建不再接受。
 客户端通过完整 Git 提交固定本仓库的协议依赖，不需要相邻工作区。拆分前验收仅是历史证据，不代表新仓库版本已完成双平台真实 Sunshine 验收。
 
-管理 Web 支持实例创建与 Client 配对、查看和更换每实例长期授权码、设备状态、白名单配置预览/编辑、明确授权重启和任务记录。授权码在 Server 端加密保存；更换后旧客户端凭据立即失效，必须使用新码重新配对。
-管理员确认的重启操作只在创建后的 15 分钟内派发；过期后需要依据当前配置修订重新确认。
+管理 Web 支持实例创建与 Client 配对、设备状态、统一字段定义驱动的配置管理、应用与封面管理、
+Moonlight PIN 和客户端授权管理、分页脱敏 Sunshine 日志、诊断、显示/输入维护，以及固定 Sunshine 服务控制。
+授权码在 Server 端加密保存；更换后旧客户端凭据立即失效，必须使用新码重新配对。
+所有写操作只在创建后的 15 分钟内派发；过期后需要依据当前资源修订重新确认。
 使用说明见 [实例创建](docs/instance-management.md) 和 [Sunshine 远端管理](docs/remote-management.md)。
 主分支的新客户端配对入口、Manager 系统证书信任及 Sunshine 自带证书固定方式见 [简化配对](docs/simple-pairing.md)。
 
-Sunshine Manager `0.10.10` 是独立的 Sunshine 主机管理服务。Server API 采用 sarmg-foundation-server 的
+Sunshine Manager `0.11.0` 是独立的 Sunshine 主机管理服务。Server API 采用 sarmg-foundation-server 的
 持久管理员控制面；Manager 保存设备身份、任务及审计，不集中保存 Sunshine 管理密码。
 实际执行由主机上的独立 Client 完成。Server 使用 Rust/Axum 与 SQLite，内置 Web 使用 Foundation 精确基线的 React/Vite。
 
-项目只接受唯一当前 `/api/v2`、当前 SQLite Schema、凭据 key ID 和不可变发行身份，不注册平行路径，
+项目只接受唯一当前 `/api/v2`、`sunshine-management/2`、当前 SQLite Schema、凭据 key ID 和不可变发行身份，不注册平行路径，
 不读取非当前数据库或其他 key。产品仓不实现迁移、备份和恢复；这些能力归 `sarmg-upgrade` 所有。
 升级工具的支持范围以其明确版本矩阵为准，不能将旧 Manager 的备份支持视为当前 Client 状态的支持。
 当前 `sunshine:sgev1:` Foundation AES-256-GCM envelope 强制使用确定性、长度分帧的 AAD：

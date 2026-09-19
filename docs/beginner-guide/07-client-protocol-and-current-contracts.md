@@ -1,6 +1,6 @@
 # 07. Client 协议与当前合同
 
-Client HTTP 入口完成授权码解析、注册和 identity 检查；WSS `/sunshine-client/v1/connect` 承载 Hello、
+Client HTTP 入口完成授权码解析、注册和 identity 检查；WSS `/sunshine-client/v2/connect` 承载 Hello、
 heartbeat、task、result 与 revoke。消息上限 64 KiB，协议和 subprotocol 都是精确常量。
 
 指令仅有 read config、patch config 和 restart。patch 必须提供 expected revision，只能 set/remove 当前

@@ -1,6 +1,6 @@
 .sunshine-workspace { min-width: 0; }
 .sunshine-workspace code, .sunshine-wrap { overflow-wrap: anywhere; }
-.sunshine-field textarea { display: block; box-sizing: border-box; width: 100%; max-width: 100%; padding: 12px; border: 1px solid currentColor; border-radius: 12px; background: var(--sarmg-bg-panel); color: var(--sarmg-text-primary); font: inherit; resize: vertical; }
+.sunshine-workspace textarea { display: block; box-sizing: border-box; width: 100%; max-width: 100%; padding: 12px; border: 1px solid currentColor; border-radius: 12px; background: var(--sarmg-bg-panel); color: var(--sarmg-text-primary); font: inherit; resize: vertical; }
 .sunshine-field { display: grid; gap: 8px; margin-block: 16px; }
 .sunshine-checkbox { display: flex; align-items: center; gap: 8px; margin-block: 12px; }
 .sunshine-config-group { margin-block: 16px; }

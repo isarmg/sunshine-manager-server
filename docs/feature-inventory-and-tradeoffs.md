@@ -1,10 +1,9 @@
 # Sunshine Manager Server 当前功能与取舍清单
 
-本文只描述 `0.10.10` 当前实现。事实源依次为 `src/http.rs::router()`、`protocol/`、`schema/product.sql`、
-Foundation 组合后的 Schema、Release identity 和管理 Web。拆分前由 Server 保存 Sunshine 密码并直接调用
-Sunshine API 的架构已删除，不属于当前能力。
+本文描述 `0.11.0` 与协议 `sunshine-management/2`。Server、Client 和协议只支持官方 Sunshine
+`v2026.914.233613`，不注册旧协议、旧版本或旧状态的回退分支。
 
-## 1. 当前拓扑与所有权
+## 拓扑与所有权
 
 ```text
 Browser ─HTTPS─> trusted ingress ─HTTP loopback─> Manager Server
@@ -13,100 +12,47 @@ Sunshine Client ─HTTPS loopback + pinned/system-trusted cert─> local Sunshin
 Moonlight ───────────────────────────────────────────────────> Sunshine data plane
 ```
 
-- Server 拥有管理员会话、实例、每实例授权码、Client credential 摘要、任务状态、配置快照和审计。
-- Client 拥有 Sunshine 地址、用户名、密码、公开证书固定材料、受保护本地状态和执行日志。
-- Server 从不接收 Sunshine 密码、证书私钥或完整本地配置，也不直接连接 Sunshine。
-- 本产品不代理视频、不改变 Moonlight/Sunshine 串流链路，也不提供远程 Shell、应用管理、Moonlight
-  客户端管理或封面代理。
+Server 拥有管理员会话、实例、授权码、Client credential 摘要、任务、观察和审计。Client 拥有 Sunshine
+地址、凭据、公开证书固定材料、本地身份和执行日志。完整 Sunshine 配置和密码不离开主机；视频与输入流不经过
+Manager。
 
-## 2. 平台、身份与配置
+## 当前管理能力
 
-| 能力 | 当前事实 | 关键边界 |
+| 领域 | 能力 | 边界 |
 |---|---|---|
-| Server 平台 | 仅 `x86_64-unknown-linux-gnu` | build、运行时和发行树三层拒绝其他目标 |
-| 软件/API | 0.10.10，管理 API `/api/v2` | 不注册旧 API alias |
-| 数据库 | Schema revision 7，SHA 由 release identity 固定 | 非当前 metadata/DDL 在业务写入前拒绝 |
-| Foundation | Cargo.lock 中所有 Foundation crate 必须来自同一完整 revision | build.rs 自动从锁文件派生运行时 `foundation_revision`，不手写 |
-| 监听 | `127.0.0.1:18104` | 非 loopback 配置直接拒绝，外部 TLS/WSS 由可信入口终止 |
-| 静态 Web | 绝对路径、固定 layout、无链接别名 | 生产资源不能由服务账户拥有或被 group/world 写入 |
-| Secret key | Base64 解码后恰 32 bytes，并有 key ID | 实例授权码与任务请求使用不同 AAD 域加密 |
+| 配置 | 统一定义提供类型、范围、Sunshine 版本、操作系统和前置条件；修改保留未受管字段 | 全配置修订检查减少本地编辑竞争，但 Sunshine 没有原子 CAS；网络监听、证书、凭据、任意路径和全局命令不开放 |
+| 应用 | 列表、新建、编辑、删除、关闭当前应用、PNG 封面 | 使用列表修订和内容引用映射即时索引；命令字段只能通过专用应用结构提交，不存在通用 Shell |
+| Moonlight | 提交 PIN、列出客户端、启用/禁用、单个或全部取消配对 | 与 Manager–Client 注册完全分离；禁用和取消配对会影响活动会话 |
+| 日志与诊断 | Sunshine 日志按字节游标分页、客户端脱敏；读取 API、认证、版本、平台、配置修订和服务状态 | 单页上限 24 KiB；管理操作记录与 Sunshine 日志分开显示 |
+| 显示与输入 | 重置显示设备持久状态、重置 Portal token、读取 VirtualHID/ViGEmBus 状态 | 使用固定上游端点，不接收路径、驱动安装命令或任意 HTTP |
+| 服务 | 读取状态并启动、停止、重启 | Windows 固定 `SunshineService`，Linux 固定 systemd `sunshine.service`；macOS 未声明固定服务能力 |
 
-`SUNSHINE_MANAGER_DATABASE_URL`、`STATIC_DIR`、`BIND`、`PRODUCTION`、`CREDENTIAL_KEY`、
-`CREDENTIAL_KEY_ID` 与 bootstrap 管理员字段是当前配置面。旧 cover allowlist/proxy、Sunshine host/password
-和产品级 Session TTL 变量均不受读取，不得继续出现在模板中。
+Client 配对后直接启用 Sunshine 专用管理能力，不再询问重启、应用命令或服务控制权限。Web 对会中断会话、
+删除资源或执行主机应用命令的单次操作仍要求管理员确认，并保留 15 分钟派发期限。
 
-## 3. 管理员与 Web
+## 协议、任务与证据
 
-管理员认证、Argon2id、Session、CSRF、同源检查、统一错误和账户设置来自 Foundation。管理 Web 统一为：
+Client 首帧必须上报精确协议、Client/Sunshine 版本、平台、全部受管字段和领域能力。旧 v1 消息、缺少字段的
+能力对象、未知命令/结果字段和超过 64 KiB 的消息均失败关闭。
 
-- 实例列表：总览、每实例名称、注册/在线/Sunshine 状态和配置状态；
-- 详细信息：实例长期授权码、名称、配对取消或终态删除、凭据撤销、当前快照、白名单配置预览与提交、
-  明确授权的 Sunshine 重启；
-- 日志：最近任务、终态、结果、核对证据，以及 unknown 的人工结论。
+每条命令都有独立业务权限、资源命名空间、输入边界和对应结果。写入先持久化 Foundation operation，Client
+再持久化副作用意图。断线、回执丢失或崩溃后只核对持久事实，不自动重做副作用。配置和应用修改可用修订/内容
+核对；关闭应用、PIN 和维护等没有充分可观察证据的动作在丢回执时保持 `unknown`。
 
-语言切换直接生效，不弹出“重新载入会丢失编辑”的确认框。页面状态是 Server 投影；SQLite 与 Client 回报
-才是权威事实。
+Sunshine 日志、应用列表和客户端列表都有数量/大小限制；报告必须与原命令类型相符。结果只描述已观察事实：
+配置读回不证明编码器、显示或音频已经运行时生效，服务控制只有观察到目标状态才成功。
 
-## 4. 实例授权与配对
+## 平台、数据与发行
 
-| 能力 | 当前行为 | 失败关闭边界 |
-|---|---|---|
-| 创建实例 | 生成 64 位小写十六进制长期授权码 | 最多 4096 个实例；授权码以信封密文和独立摘要保存 |
-| 查看授权码 | 管理员可从 Server 解密读取 | 响应 `no-store`，不写日志 |
-| 更换授权码 | 新码替换密文/摘要，清除 installation、credential、session 与健康状态 | 旧 Client 必须重新配对 |
-| 取消配对 | 首次取消清除 pending token | 再次删除已取消且从未注册的记录，解决残留无删除入口 |
-| 注册 | Client 先解析授权码，再以 installation ID 和随机 credential 注册 | Manager/device/installation 三元绑定 |
-| 撤销 | 已注册实例永久撤销 credential 和在线会话 | 重新使用需创建新实例 |
+- Server 发行目标为 Linux AMD64，监听固定为 loopback，外部 HTTPS/WSS 由可信入口终止。
+- 管理 API 仅 `/api/v2`；SQLite Schema revision 7；正式发行绑定 Schema、Foundation revision、源码提交和全树摘要。
+- 产品不内置 migration、backup、restore 或 key rotation；这些职责属于 `sarmg-upgrade` 的明确版本矩阵。
+- 不提供任意 HTTP 代理、任意文件读写、远程 Shell、Sunshine 安装升级、视频转发、Server HA 或旧协议兼容。
 
-授权码不是一次性码，也不按时间自然过期；短期网络事务超时不改变其长期生命周期。
+## 验证矩阵
 
-## 5. Client 通道
-
-Client HTTP/WSS 入口是 `/sunshine-client/v1/pairing`、`/enroll`、`/identity` 和 `/connect`。它们只接受
-来自 loopback TLS ingress 的 `X-Forwarded-Proto: https`，拒绝浏览器 Origin/Cookie；WSS 必须协商
-`sunshine-management.v1`，消息最大 64 KiB，同时在线 Client 上限 256。
-
-连接后 Client 首帧必须是精确 `Hello`，绑定 identity、协议、受支持 Sunshine 版本、平台、重启许可和
-完整 managed field 集合。心跳回报 Sunshine 可达性与白名单配置快照。Server 45 秒未见活动、任务 110 秒
-未回执、实例被撤销或会话被替换时断开连接。
-
-## 6. 配置与任务协议
-
-唯一指令为：
-
-- `read_config`：读取当前白名单配置；
-- `patch_config`：携带 expected revision、set/remove 和固定 manual restart policy；
-- `restart`：携带 expected revision 且管理员与 Client 本地策略都明确允许。
-
-当前白名单只有 `sunshine_name`、日志级别、QP、HEVC/AV1 模式、线程数、软件编码 preset 与有限 NVENC
-字段。任意其他键、越界值、空变更、错误 revision、binding 或 permission 都被拒绝。Server 不接受完整
-Sunshine JSON，不管理 apps/clients，也不把管理员输入转换成任意本机命令。
-
-## 7. 持久任务与不确定性
-
-管理写入先以 `Idempotency-Key` 持久化 Foundation operation，再通过 WSS 交给对应 Client；请求正文在库中
-按 operation ID/action AAD 加密。每设备同一时刻只执行一个任务，不同设备可独立前进。
-
-状态包括 pending、running、succeeded、failed、unknown、dead_letter、resolved。Server 或连接在执行边界
-中断时不能推断 Sunshine 是否已产生副作用，因此恢复为 unknown；Client 随后只能以 inspect-only 回报本地
-执行事实，不能重做副作用。管理员核对真实 Sunshine 状态后可记录 confirmed_succeeded、confirmed_failed
-或 unable_to_confirm，resolve 不会再次执行任务。
-
-## 8. 数据、发行与明确不提供
-
-- SQLite 单实例运行；启动清除旧在线 session，并恢复运行中 operation 的不确定状态。
-- 产品不内置 migration、backup、restore 或 key rotation。`sarmg-upgrade` 当前也未声明支持 0.10.10；
-  不得使用 Sunshine 0.8.1 适配器处理当前库。
-- 正式发行树包含 Server binary、Web、systemd、配置示例、README 和 manifest；文件、权限、大小、摘要、
-  source revision、Schema 与 Foundation revision 必须形成同一不可变身份。
-- 当前不提供多管理员角色、SSO、Server HA、非 Linux Server、自动 unknown 重试、任意配置字段、
-  Sunshine 安装升级、视频转发、apps/clients/cover 路由或旧状态兼容。
-
-## 9. 最低验证矩阵
-
-1. Rust fmt/check/clippy/test 和 protocol unknown-field/大小/binding/字段边界。
-2. 数据库 identity、授权码加密/查看/轮换、取消后删除、注册/撤销和审计事务。
-3. WSS ingress、subprotocol、并发上限、Hello/heartbeat、会话替换、超时及 revoke。
-4. operation 幂等、per-device 串行、断线 unknown、inspect-only 和人工 resolve。
-5. React typecheck/build/browser：实例列表、详情、日志、授权码、取消/删除、配置与语言直接切换。
-6. release identity、Foundation lock-derived revision、全树篡改拒绝和供应链权限门禁。
+1. Rust fmt/check/clippy/test，协议命令/报告对应、权限、大小、版本、平台和字段边界。
+2. 本地 HTTPS 夹具验证证书固定、无代理/重定向、应用修订、配对、日志脱敏、维护固定端点。
+3. operation 幂等、安装代际、15 分钟写入期限、断线 unknown、只读核对和人工结论。
+4. Chromium 与 Firefox 验证配置差异、应用稳定引用、Moonlight、日志、诊断、维护及服务控制。
+5. 真实 Sunshine 与 Windows/Linux 固定服务适配器仍需在对应主机上验证实际副作用和恢复过程。

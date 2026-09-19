@@ -16,6 +16,26 @@ fn task(command: Command, permission: Permission) -> Task {
     }
 }
 
+fn capabilities() -> Capabilities {
+    Capabilities {
+        protocol: PROTOCOL.into(),
+        client_version: "0.2.0".into(),
+        os: ClientOs::LinuxX86_64,
+        sunshine_version: SUNSHINE_VERSION.into(),
+        restart_allowed: true,
+        managed_fields: FIELD_DEFINITIONS
+            .iter()
+            .map(|field| field.key.to_owned())
+            .collect(),
+        application_management: true,
+        application_host_commands_allowed: true,
+        moonlight_pairing_management: true,
+        diagnostics: true,
+        maintenance: true,
+        service_control: true,
+    }
+}
+
 #[test]
 fn closed_protocol_rejects_arbitrary_execution_and_unknown_fields() {
     for bytes in [
@@ -55,7 +75,10 @@ fn credentials_commands_network_and_paths_are_never_managed_fields() {
             },
             Permission::WriteConfig,
         );
-        assert!(task.validate(&task.binding, true).is_err(), "{key}");
+        assert!(
+            task.validate(&task.binding, &capabilities()).is_err(),
+            "{key}"
+        );
     }
 }
 
@@ -104,34 +127,34 @@ fn field_types_ranges_and_config_line_injection_are_rejected() {
     }
     assert!(validate_field("sunshine_name", &FieldValue::Text("猫".repeat(32))).is_ok());
     assert!(validate_field("sunshine_name", &FieldValue::Text("🎮".repeat(32))).is_ok());
-    assert!(validate_field("min_log_level", &FieldValue::Text("debug".into())).is_err());
+    assert!(validate_field("min_log_level", &FieldValue::Text("debug".into())).is_ok());
     assert!(validate_field("qp", &FieldValue::Integer(28)).is_ok());
 }
 
 #[test]
 fn binding_protocol_and_permissions_are_enforced() {
     let mut task = task(Command::ReadConfig {}, Permission::ReadConfig);
-    assert!(task.validate(&task.binding, false).is_ok());
+    assert!(task.validate(&task.binding, &capabilities()).is_ok());
     let mut wrong = task.binding.clone();
     wrong.device_id = Uuid::from_u128(4);
     assert_eq!(
-        task.validate(&wrong, false),
+        task.validate(&wrong, &capabilities()),
         Err(Rejection::BindingMismatch)
     );
     task.permission = Permission::WriteConfig;
     assert_eq!(
-        task.validate(&task.binding, false),
+        task.validate(&task.binding, &capabilities()),
         Err(Rejection::PermissionDenied)
     );
-    task.protocol = "sunshine-management/2".into();
+    task.protocol = "sunshine-management/1".into();
     assert_eq!(
-        task.validate(&task.binding, false),
+        task.validate(&task.binding, &capabilities()),
         Err(Rejection::InvalidTask)
     );
 }
 
 #[test]
-fn restart_requires_both_local_policy_and_administrator_confirmation() {
+fn restart_requires_reported_capability_and_administrator_confirmation() {
     let mut task = task(
         Command::Restart {
             expected_revision: "f".repeat(64),
@@ -139,9 +162,11 @@ fn restart_requires_both_local_policy_and_administrator_confirmation() {
         },
         Permission::Restart,
     );
-    assert!(task.validate(&task.binding, true).is_ok());
+    assert!(task.validate(&task.binding, &capabilities()).is_ok());
+    let mut no_restart = capabilities();
+    no_restart.restart_allowed = false;
     assert_eq!(
-        task.validate(&task.binding, false),
+        task.validate(&task.binding, &no_restart),
         Err(Rejection::PermissionDenied)
     );
     task.command = Command::Restart {
@@ -149,7 +174,7 @@ fn restart_requires_both_local_policy_and_administrator_confirmation() {
         administrator_confirmed: false,
     };
     assert_eq!(
-        task.validate(&task.binding, true),
+        task.validate(&task.binding, &capabilities()),
         Err(Rejection::PermissionDenied)
     );
 }

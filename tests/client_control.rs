@@ -1,4 +1,6 @@
-use sunshine_client_protocol::{Command, Rejection, Report, Uncertainty};
+use sunshine_client_protocol::{
+    Capabilities, ClientOs, Command, PROTOCOL, Rejection, Report, SUNSHINE_VERSION, Uncertainty,
+};
 use sunshine_manager::{
     crypto::SecretBox,
     db,
@@ -33,6 +35,29 @@ async fn registered(pool: &sqlx::SqlitePool) -> (String, String) {
     )
     .await
     .unwrap();
+    let capabilities = Capabilities {
+        protocol: PROTOCOL.into(),
+        client_version: "test".into(),
+        os: ClientOs::LinuxX86_64,
+        sunshine_version: SUNSHINE_VERSION.into(),
+        restart_allowed: true,
+        managed_fields: sunshine_client_protocol::config::FIELD_DEFINITIONS
+            .iter()
+            .map(|field| field.key.to_owned())
+            .collect(),
+        application_management: true,
+        application_host_commands_allowed: true,
+        moonlight_pairing_management: true,
+        diagnostics: true,
+        maintenance: true,
+        service_control: true,
+    };
+    sqlx::query("UPDATE devices SET capabilities_json=? WHERE device_id=?")
+        .bind(serde_json::to_string(&capabilities).unwrap())
+        .bind(&ticket.device.id)
+        .execute(pool)
+        .await
+        .unwrap();
     (ticket.device.id, credential)
 }
 async fn session(pool: &sqlx::SqlitePool, id: &str, session: &str) {
