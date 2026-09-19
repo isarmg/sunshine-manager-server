@@ -1005,9 +1005,9 @@ mod protocol_v2_tests {
 
     fn binding() -> Binding {
         Binding {
-            manager_id: Uuid::new_v4(),
-            device_id: Uuid::new_v4(),
-            installation_id: Uuid::new_v4(),
+            manager_id: Uuid::from_u128(1),
+            device_id: Uuid::from_u128(2),
+            installation_id: Uuid::from_u128(3),
         }
     }
 
@@ -1067,7 +1067,7 @@ mod protocol_v2_tests {
         application.cmd = "steam".into();
         let mut task = Task {
             protocol: PROTOCOL.into(),
-            operation_id: format!("op_{}", Uuid::new_v4()),
+            operation_id: format!("op_{}", Uuid::from_u128(4)),
             binding: binding.clone(),
             permission: Permission::ManageApplications,
             command: Command::SaveApplication {
