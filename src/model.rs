@@ -23,6 +23,8 @@ pub struct DeviceName {
 }
 #[derive(Debug, Serialize)]
 pub struct ClientAuthorization {
+    pub manager_id: String,
+    pub device_id: String,
     pub authorization_code: String,
 }
 #[derive(Deserialize)]

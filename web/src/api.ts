@@ -9,7 +9,7 @@ export type Snapshot = {revision:string;sunshine_version:string;fields:Record<st
 export type Capabilities={protocol:string;client_version:string;os:string;sunshine_version:string;restart_allowed:boolean;managed_fields:string[];application_management:boolean;application_host_commands_allowed:boolean;moonlight_pairing_management:boolean;diagnostics:boolean;maintenance:boolean;service_control:boolean};
 export type DeviceInfo = {id:string;name:string;registered:boolean;pairing_pending:boolean;revoked:boolean;client_online:boolean;sunshine_reachable:boolean|null;configuration_state:string;snapshot:Snapshot|null;capabilities:Capabilities|null;last_seen_at_micros:number|null};
 export type Ticket={device:DeviceInfo;manager_id:string;token:string};
-export type ClientAuthorization={authorization_code:string};
+export type ClientAuthorization={manager_id:string;device_id:string;authorization_code:string};
 export type ConfigFieldDefinition={key:string;kind:"text"|"integer"|"boolean"|"select";minimum?:number;maximum?:number;maximum_length?:number;options?:string[];requires_restart:boolean;supported_sunshine_versions:string[];operating_systems:string[];prerequisite?:string};
 export type ApplicationRef={fingerprint:string};
 export type PreparationCommand={do:string;undo:string;elevated:boolean};
@@ -56,7 +56,7 @@ export function isDevice(value:unknown):value is DeviceInfo{
 }
 export function isDevices(value:unknown):value is DeviceInfo[]{return Array.isArray(value)&&value.every(isDevice)}
 export function isTicket(value:unknown):value is Ticket{return record(value)&&isDevice(value.device)&&typeof value.manager_id==="string"&&typeof value.token==="string"}
-export function isClientAuthorization(value:unknown):value is ClientAuthorization{return record(value)&&Object.keys(value).length===1&&typeof value.authorization_code==="string"&&/^[a-f0-9]{64}$/.test(value.authorization_code)}
+export function isClientAuthorization(value:unknown):value is ClientAuthorization{return record(value)&&Object.keys(value).length===3&&typeof value.manager_id==="string"&&/^[0-9a-f-]{36}$/.test(value.manager_id)&&typeof value.device_id==="string"&&/^[0-9a-f-]{36}$/.test(value.device_id)&&typeof value.authorization_code==="string"&&/^[a-f0-9]{64}$/.test(value.authorization_code)}
 export function isConfigFieldDefinition(value:unknown):value is ConfigFieldDefinition{return record(value)&&typeof value.key==="string"&&["text","integer","boolean","select"].includes(String(value.kind))&&(!("minimum" in value)||Number.isSafeInteger(value.minimum))&&(!("maximum" in value)||Number.isSafeInteger(value.maximum))&&(!("maximum_length" in value)||Number.isSafeInteger(value.maximum_length))&&(!("options" in value)||(Array.isArray(value.options)&&value.options.every(option=>typeof option==="string")))&&typeof value.requires_restart==="boolean"&&Array.isArray(value.supported_sunshine_versions)&&value.supported_sunshine_versions.every(version=>typeof version==="string")&&Array.isArray(value.operating_systems)&&value.operating_systems.every(os=>typeof os==="string")&&(!("prerequisite" in value)||typeof value.prerequisite==="string")}
 export function isConfigFieldDefinitions(value:unknown):value is ConfigFieldDefinition[]{return Array.isArray(value)&&value.every(isConfigFieldDefinition)&&new Set(value.map(field=>field.key)).size===value.length}
 function isRevision(value:unknown):value is string{return typeof value==="string"&&/^[a-f0-9]{64}$/.test(value)}

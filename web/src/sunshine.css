@@ -1,4 +1,6 @@
 .sunshine-workspace { min-width: 0; }
+.sunshine-detail-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .55rem 1.25rem; margin: 0; }
+.sunshine-detail-list dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .sunshine-workspace code, .sunshine-wrap { overflow-wrap: anywhere; }
 .sunshine-workspace textarea { display: block; box-sizing: border-box; width: 100%; max-width: 100%; padding: 12px; border: 1px solid currentColor; border-radius: 12px; background: var(--sarmg-bg-panel); color: var(--sarmg-text-primary); font: inherit; resize: vertical; }
 .sunshine-field { display: grid; gap: 8px; margin-block: 16px; }
@@ -11,3 +13,4 @@
 .sunshine-cover { max-width: 100%; max-height: 240px; object-fit: contain; }
 .sunshine-logs { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; }
 @media (max-width: 48rem) { .sunshine-fields { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 36rem) { .sunshine-detail-list { grid-template-columns: max-content minmax(0, 1fr); gap: .45rem .75rem; } }

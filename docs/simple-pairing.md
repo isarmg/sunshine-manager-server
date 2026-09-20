@@ -1,4 +1,4 @@
-# 简化配对（Server 0.11.1 / Client 0.2.0）
+# 简化配对（Server 0.11.2 / Client 0.2.0）
 
 客户端 UI 仅填写 Server 地址、256-bit 实例授权码、本机 Sunshine 回环地址/端口及账号密码；使用 Sunshine
 自带证书时再选择其配置项 `cert` 对应的 `cacert.pem`。Manager ID、设备 ID 不再是用户输入项。客户端与

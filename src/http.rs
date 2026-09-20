@@ -177,6 +177,8 @@ async fn device_authorization(
     Ok((
         [("cache-control", "no-store")],
         Json(ClientAuthorization {
+            manager_id: db::manager_id(&state.pool).await?.to_string(),
+            device_id: id.clone(),
             authorization_code: db::get_authorization(&state.pool, &state.secrets, &id).await?,
         }),
     )
@@ -191,6 +193,8 @@ async fn update_device_authorization(
     Ok((
         [("cache-control", "no-store")],
         Json(ClientAuthorization {
+            manager_id: db::manager_id(&state.pool).await?.to_string(),
+            device_id: id.clone(),
             authorization_code: db::rotate_authorization(
                 &state.pool,
                 &state.secrets,
