@@ -12,6 +12,10 @@ pub const PROTOCOL: &str = "sunshine-management/2";
 pub const WEBSOCKET_SUBPROTOCOL: &str = "sunshine-management.v2";
 pub const SUNSHINE_VERSION: &str = "2026.914.233613";
 pub const SUPPORTED_SUNSHINE_VERSIONS: &[&str] = &[SUNSHINE_VERSION];
+pub const LIVE_HEALTH_PATH: &str = "/healthz";
+pub const READY_HEALTH_PATH: &str = "/readyz";
+pub const PAIRING_PATH: &str = "/sunshine-client/v2/pairing";
+pub const CONNECT_PATH: &str = "/sunshine-client/v2/connect";
 pub const MAX_MESSAGE_BYTES: usize = 64 * 1024;
 
 pub fn is_supported_sunshine_version(version: &str) -> bool {
