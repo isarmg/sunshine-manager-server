@@ -114,14 +114,15 @@ proxy 必须覆盖而非信任外部传入的 `X-Forwarded-Proto`，仅在已验
 Client 主动连接 Server 的 WSS，无需在 Sunshine 主机开放额外入站管理端口。
 只有 Client 通过本机回环 HTTPS 访问 Sunshine；Server 不直接连接 Sunshine。Manager HTTPS/WSS 仅接受
 系统已信任且名称匹配的证书；私有 CA 必须先安全安装到 Client 实际运行身份使用的系统信任库，Windows
-LocalSystem 使用计算机信任存储。本机 Sunshine 可选择相同系统验证，或精确固定其自带 `cacert.pem`，
-以支持默认无回环 IP SAN 的自签名证书。没有 TOFU、任意证书接受或重定向绕过开关。详见
+LocalSystem 使用计算机信任存储。本机 Sunshine 必须使用 HTTPS 回环 IP 字面量；Client 不校验这条本机
+连接的证书身份，以支持默认无回环 IP SAN 的自签名证书。它不使用代理、不跟随重定向，也不接受非回环
+地址、URL 凭据、查询、片段或额外路径。详见
 [简化配对](https://github.com/isarmg/sunshine-manager-server/blob/v0.11.3/docs/simple-pairing.md)。
 
 ## 7. 当前连续性限制与外部升级边界
 
 Sunshine Manager 产品仓没有 backup、restore、Schema conversion、key rotation 或 re-encryption 命令。
-`sarmg-upgrade` 是这些能力的唯一所有者，其当前支持矩阵只声明 Sunshine 0.8.1 精确身份的 keyed
+`sarmg-upgrade` 是这些能力的唯一所有者，其当前支持矩阵只声明 Sunshine 0.8.0 精确身份的 keyed
 backup/verify/restore，并未声明支持本仓当前 0.11.3。不能因依赖更新或构建通过推定备份可跨版本恢复；
 在对应 adapter 和实际验收完成前，不对当前实例执行该工具的旧版本恢复流程。
 

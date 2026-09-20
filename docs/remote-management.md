@@ -2,8 +2,8 @@
 
 实例列表为独立表格页面，功能导航位于顶部。新建实例只填写名称并取得该实例的长期授权码；Server 加密保存，设备状态页可查看和更换。更换后旧 Client credential 立即撤销，必须使用新码重新配对。
 在 Sunshine 主机安装独立仓库的 [Client](https://github.com/isarmg/sunshine-manager-client)，由其主动建立 Manager WSS 通道。
-Sunshine 用户名、密码和其自带 `cacert.pem` 仅在 Client 本机配置，不在 Manager 的连接表单填写。默认
-自签名证书由 Client 精确固定；Manager 不接收证书或 Sunshine 凭据。
+Sunshine 用户名和密码仅在 Client 本机配置，不在 Manager 的连接表单填写。Client 只接受 HTTPS 回环 IP
+地址，且不校验这条本机连接的证书身份；Manager 不接收 Sunshine 凭据。
 
 | 页面 | 当前功能 |
 | --- | --- |

@@ -4,7 +4,7 @@ Sunshine Manager 是 Sunshine 的集中控制面，由 Linux AMD64 Server、管�
 协议组成。Moonlight 仍直接连接 Sunshine；Manager 不转发游戏画面。
 
 Server 保存管理员、实例、长期授权码、Client credential 摘要、配置快照、任务和审计。Client 保存本机
-Sunshine endpoint、用户名/密码、公开证书固定材料和执行日志。两端之间只有当前
+Sunshine endpoint、用户名/密码和执行日志。两端之间只有当前
 `sunshine-management/2` 协议。
 
 当前软件是 0.11.3，管理 API 为 `/api/v2`，数据库为 revision 7。应用与 Moonlight 管理由 Client 调用

@@ -1,56 +1,47 @@
 # Sunshine Manager
 
-本仓库只包含 Server、管理 Web 和产品协议。Windows/Linux x86_64 客户端及安装流程位于独立的
-[sunshine-manager-client](https://github.com/isarmg/sunshine-manager-client) 仓库，固定适配已修复安全问题的 Sunshine 官方 v2026.914.233613；旧的 2026.516 与 2026.906 构建不再接受。
-客户端通过完整 Git 提交固定本仓库的协议依赖，不需要相邻工作区。拆分前验收仅是历史证据，不代表新仓库版本已完成双平台真实 Sunshine 验收。
+Sunshine Manager `0.11.3` 是集中管理多台 Sunshine 主机的自托管服务。Rust/Axum Server 负责管理员、设备、任务和审计，内置 React Web 提供配置、应用、Moonlight PIN、日志、诊断、维护和 Sunshine 服务控制。
 
-管理 Web 支持实例创建与 Client 配对、设备状态、统一字段定义驱动的配置管理、应用与封面管理、
-Moonlight PIN 和客户端授权管理、分页脱敏 Sunshine 日志、诊断、显示/输入维护，以及固定 Sunshine 服务控制。
-授权码在 Server 端加密保存；更换后旧客户端凭据立即失效，必须使用新码重新配对。
-所有写操作只在创建后的 15 分钟内派发；过期后需要依据当前资源修订重新确认。
-使用说明见 [实例创建](docs/instance-management.md) 和 [Sunshine 远端管理](docs/remote-management.md)。
-主分支的新客户端配对入口、Manager 系统证书信任及 Sunshine 自带证书固定方式见 [简化配对](docs/simple-pairing.md)。
+实际操作由每台主机上的独立 [sunshine-manager-client](https://github.com/isarmg/sunshine-manager-client) 完成；Manager 不保存 Sunshine 管理密码，也不代理 Sunshine–Moonlight 媒体流。正式 Server 仅支持 Linux AMD64 GNU（`x86_64-unknown-linux-gnu`）。
 
-Sunshine Manager `0.11.3` 是独立的 Sunshine 主机管理服务。Server API 采用 sarmg-foundation-server 的
-持久管理员控制面；Manager 保存设备身份、任务及审计，不集中保存 Sunshine 管理密码。
-实际执行由主机上的独立 Client 完成。Server 使用 Rust/Axum 与 SQLite，内置 Web 使用 Foundation 精确基线的 React/Vite。
+## 配置概览
 
-项目只接受唯一当前 `/api/v2`、`sunshine-management/2`、当前 SQLite Schema、凭据 key ID 和不可变发行身份，不注册平行路径，
-不读取非当前数据库或其他 key。产品仓不实现迁移、备份和恢复；这些能力归 `sarmg-upgrade` 所有。
-升级工具的支持范围以其明确版本矩阵为准，不能将旧 Manager 的备份支持视为当前 Client 状态的支持。
-当前 `sunshine:sgev1:` Foundation AES-256-GCM envelope 强制使用确定性、长度分帧的 AAD：
-operation request 绑定 operation ID、action 和 `request_ciphertext` 字段域。相同前缀
-但使用空 AAD 生成的密文也不是当前格式，启动、doctor 和业务读取都会拒绝，不存在旧密文 fallback。
-同一 master key 还通过 HKDF-SHA-256 的两个独立 info 分别派生 request fingerprint 与 Idempotency-Key 的
-HMAC-SHA-256 key；SQLite 中没有低熵请求或幂等键的裸 SHA-256 摘要，也不接受旧摘要兼容。
+从模板创建生产环境文件，并生成恰好 32 bytes 的凭据加密密钥：
 
-浏览器源码统一位于 `web/`；运行配置模板位于 `config/`。业务 DDL 位于 `schema/product.sql`，
-完整当前 DDL 由 Foundation Schema Composer 写入 `schema/generated/current_schema.sql`。
-真实数据库、credentials key
-和生产环境文件位于源码树外。
+```sh
+sudo install -d -m 0750 /etc/isarmg
+sudo install -m 0600 config/sunshine-manager.env.example \
+  /etc/isarmg/sunshine-manager.env
+openssl rand -base64 32
+sudoedit /etc/isarmg/sunshine-manager.env
+```
 
-正式 Server binary 及其内置 Web 发行树只支持 `x86_64-unknown-linux-gnu`（Linux AMD64）。这是控制面
-发行边界，不改变被管理 Sunshine Host、Moonlight 客户端或 Sunshine 上游协议的原有平台范围。
+至少替换 `SUNSHINE_MANAGER_CREDENTIAL_KEY` 和管理员密码，并检查数据库、静态资源与监听地址。发行包中的服务启动命令为：
 
-## 快速验证
+```sh
+/opt/isarmg/sunshine-manager/releases/0.11.3/bin/sunshine-manager \
+  serve-release --root /opt/isarmg/sunshine-manager/releases/0.11.3
+```
 
-```bash
+建议只监听 loopback，由 HTTPS 反向代理提供浏览器入口。部署、账号维护、Client 配对和远端管理见运维文档。
+
+## 开发验证
+
+```sh
 python3 scripts/check-workflow-supply-chain.py
 cargo +1.98.0 fmt --all -- --check
-cargo +1.98.0 check --locked --target x86_64-unknown-linux-gnu --all-targets
 cargo +1.98.0 clippy --locked --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
 cargo +1.98.0 test --locked --target x86_64-unknown-linux-gnu
-cd web && npm ci && npm run build
+(cd web && npm ci && npm run build)
 ```
 
 ## 文档
 
 - [文档总览](docs/README.md)
-- [初学者学习指南](docs/beginner-guide/README.md)
-- [项目工作流程与流程树](docs/project-workflow.md)
-- [完整功能与取舍清单](docs/feature-inventory-and-tradeoffs.md)
-- [部署、配置、安全与故障运维](docs/operations.md)
+- [初学者指南](docs/beginner-guide/README.md)
+- [实例管理](docs/instance-management.md)
+- [Client 配对](docs/simple-pairing.md)
+- [远端管理](docs/remote-management.md)
+- [部署与运维](docs/operations.md)
 
 代码采用 [Apache License 2.0](LICENSE-APACHE)。
-
-账号修改方法见 [账号设置](docs/account-settings.md)。

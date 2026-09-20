@@ -8,12 +8,12 @@
 ```text
 Browser ─HTTPS─> trusted ingress ─HTTP loopback─> Manager Server
 Sunshine Client ─WSS/HTTPS─> trusted ingress ─HTTP loopback─> Manager Server
-Sunshine Client ─HTTPS loopback + pinned/system-trusted cert─> local Sunshine
+Sunshine Client ─HTTPS loopback（不校验证书身份）─> local Sunshine
 Moonlight ───────────────────────────────────────────────────> Sunshine data plane
 ```
 
 Server 拥有管理员会话、实例、授权码、Client credential 摘要、任务、观察和审计。Client 拥有 Sunshine
-地址、凭据、公开证书固定材料、本地身份和执行日志。完整 Sunshine 配置和密码不离开主机；视频与输入流不经过
+地址、凭据、本地身份和执行日志。完整 Sunshine 配置和密码不离开主机；视频与输入流不经过
 Manager。
 
 ## 当前管理能力
@@ -52,7 +52,7 @@ Sunshine 日志、应用列表和客户端列表都有数量/大小限制；报�
 ## 验证矩阵
 
 1. Rust fmt/check/clippy/test，协议命令/报告对应、权限、大小、版本、平台和字段边界。
-2. 本地 HTTPS 夹具验证证书固定、无代理/重定向、应用修订、配对、日志脱敏、维护固定端点。
+2. 本地 HTTPS 夹具验证回环地址限制、无代理/重定向、应用修订、配对、日志脱敏、维护固定端点。
 3. operation 幂等、安装代际、15 分钟写入期限、断线 unknown、只读核对和人工结论。
 4. Chromium 与 Firefox 验证配置差异、应用稳定引用、Moonlight、日志、诊断、维护及服务控制。
 5. 真实 Sunshine 与 Windows/Linux 固定服务适配器仍需在对应主机上验证实际副作用和恢复过程。
