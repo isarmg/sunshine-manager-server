@@ -7,6 +7,10 @@ import {preview} from "vite";
 import {randomUUID} from "node:crypto";
 const session={authenticated:true,user_id:"A".repeat(43),username:"admin",role:"admin",csrf_token:"A".repeat(43)};
 const configFields=[];
+async function assertColumnContentAlignment(table){
+ const offsets=await table.evaluate(element=>{const textStart=cell=>{const walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode())&&!text.textContent.trim()){}if(!text)throw new Error("table cell has no visible text");const range=document.createRange();range.selectNodeContents(text);return range.getBoundingClientRect().left};const contentStart=cell=>cell.firstElementChild?.getBoundingClientRect().left??textStart(cell);const headings=[...element.querySelectorAll("thead th")],values=[...element.querySelector("tbody tr").children];if(headings.length!==values.length)throw new Error("table column count mismatch");return headings.map((heading,index)=>Math.abs(textStart(heading)-contentStart(values[index])))});
+ assert.ok(offsets.every(offset=>offset<0.5),`column content offsets: ${JSON.stringify(offsets)}`);
+}
 const server=await preview({preview:{host:"127.0.0.1",port:0,strictPort:true}});
 try {
  for(const engine of [chromium,firefox]){
@@ -71,7 +75,7 @@ try {
    await expect(page.getByRole("button",{name:"关闭通知",exact:true})).toHaveCount(0,{timeout:7000});
    await expect(page.getByRole("complementary")).toHaveCount(0);
    await page.getByRole("button",{name:"实例列表",exact:true}).click();
-   await expect(page.getByRole("button",{name:"选择实例 测试 Sunshine"})).toHaveText("测试 Sunshine");
+   await expect(page.getByRole("link",{name:"选择实例 测试 Sunshine"})).toHaveText("测试 Sunshine");
    const table=page.getByRole("table",{name:"Sunshine 实例列表"});
    const statistics=page.getByRole("table",{name:"实例统计"});
    await expect(statistics.getByRole("columnheader")).toHaveText(["统计项","总数 / 在线"]);
@@ -81,12 +85,13 @@ try {
    await expect(table.getByRole("columnheader")).toHaveText(["实例名称","注册状态","客户端 状态","Sunshine 接口","配置状态","操作系统","最近连接","删除"]);
    await expect(table.locator("tbody td")).toHaveText(["等待配对","离线","未知","尚未核对","尚未上报","尚未连接","删除"]);
    assert.ok((await table.locator("th, td").evaluateAll(elements=>elements.map(element=>getComputedStyle(element).textAlign))).every(value=>value==="left"));
+   await assertColumnContentAlignment(table);
    assert.ok((await table.locator(".sarmg-actions").evaluateAll(elements=>elements.map(element=>getComputedStyle(element).justifyContent))).every(value=>value==="flex-start"));
    assert.equal(await table.locator("tbody tr").evaluate(row=>getComputedStyle(row).display),"table-row");
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    assert.deepEqual((await new AxeBuilder({page}).withTags(["wcag2a","wcag2aa","wcag21aa"]).analyze()).violations,[]);
    failNextAuthorization=true;
-   await page.getByRole("button",{name:"选择实例 测试 Sunshine"}).click();
+   await page.getByRole("link",{name:"选择实例 测试 Sunshine"}).click();
    await expect(page.getByRole("button",{name:"详细信息",exact:true})).toHaveAttribute("aria-pressed","true");
    await expect(page.getByText("等待配对",{exact:true})).toBeVisible();
    await expect(page.getByLabel("Sunshine 密码",{exact:true})).toHaveCount(0);

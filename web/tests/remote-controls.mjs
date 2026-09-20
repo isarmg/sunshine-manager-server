@@ -33,7 +33,7 @@ try {for(const engine of [chromium,firefox]){
    }return route.fulfill({json:session});
   });
   await page.goto("http://127.0.0.1:"+server.httpServer.address().port);
-  await page.getByRole("button",{name:"选择实例 游戏主机",exact:true}).click();
+  await page.getByRole("link",{name:"选择实例 游戏主机",exact:true}).click();
   await expect(page.getByRole("button",{name:"详细信息",exact:true})).toHaveAttribute("aria-pressed","true");
   await page.getByLabel("Sunshine 名称", { exact: true }).fill("New name");
   await page.getByRole("button",{name:"预览变更",exact:true}).click();
