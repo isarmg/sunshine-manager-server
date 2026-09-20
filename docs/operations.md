@@ -27,7 +27,7 @@ asset 和 group/world writable 内容。
 python3 scripts/package-release.py /absolute/release-output
 ```
 
-当前 Server Rust 固定 Foundation 0.8.2 / `e349d8a3b63b6d9f2c41d1515a4909ce8e9821a5`；八个 Web 包
+当前 Server Rust 固定 Foundation 0.8.3 / `937f543e38ae34c7520672e465c4f9d3f8010e81`；八个 Web 包
 使用同版正式 Release tarball 和 lockfile integrity，不依赖相邻 Foundation checkout。独立 CI 已通过，
 见[消费者矩阵](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/consumer-matrix.json)。
 这证明当前源码的独立依赖与构建，不表示现有产品 tag 已包含随后主分支的改动；正式交付仍须使用
