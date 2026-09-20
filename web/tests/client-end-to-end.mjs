@@ -80,11 +80,12 @@ try {
    const page=await browser.newPage({ locale: "zh-CN" });page.on("pageerror",e=>errors.push(e.message));
    await page.goto(base);await page.getByLabel("用户名",{exact:true}).fill("admin");await page.getByLabel("密码",{exact:true}).fill(password);
    await page.getByRole("button",{name:"登录",exact:true}).click();
-   await page.getByRole("button",{name:"新建实例",exact:true}).click();
-   await page.getByLabel("实例名称",{exact:true}).fill("Client 闭环测试");
    const created=page.waitForResponse(r=>r.url().endsWith("/sunshine/devices")&&r.request().method()==="POST").then(async response=>{await response.finished();return response.json()});
-   await page.getByRole("button",{name:"创建实例",exact:true}).click();
+   await page.getByRole("button",{name:"新建实例",exact:true}).click();
    const ticket=await created;const id=ticket.device.id;const api="/api/v2/sunshine/devices/"+id;
+   await expect(page.getByRole("dialog")).toHaveCount(0);
+   await page.getByLabel("实例名称",{exact:true}).fill("Client 闭环测试");
+   await page.getByRole("button",{name:"保存名称",exact:true}).click();
    const state=join(root,"client");
    const pairingInput=JSON.stringify({server:"https://127.0.0.1:"+ingress.address().port+"/",authorization_code:ticket.token,sunshine_endpoint:"https://127.0.0.1:"+sunshine.address().port+"/",sunshine_certificate_path:sunshineCert,sunshine_username:"fixture",sunshine_password:"local-only-password",restart_allowed:true});
    const pairArgs=["pair","--state",state,"--input-stdin","--non-interactive","--format","json"];

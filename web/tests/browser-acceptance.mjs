@@ -24,10 +24,10 @@ try {
     if(path.endsWith("/sunshine/devices")){
      if(req.method()==="POST"){
       posts++;assert.equal(req.headers()["x-csrf-token"],session.csrf_token);
-      assert.deepEqual(Object.keys(req.postDataJSON()),["name"]);
+      assert.deepEqual(req.postDataJSON(),{});
       if(posts===1)return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET details",request_id:"create-123"}});
-      const device={id:randomUUID(),name:req.postDataJSON().name,registered:false,pairing_pending:true,revoked:false,client_online:false,sunshine_reachable:null,configuration_state:"unknown",snapshot:null,capabilities:null,last_seen_at_micros:null};
-      devices.push(device);return route.fulfill({status:201,json:{device,manager_id:randomUUID(),token:"b".repeat(64)}});
+      const device={id:randomUUID(),name:"新实例",registered:false,pairing_pending:true,revoked:false,client_online:false,sunshine_reachable:null,configuration_state:"unknown",snapshot:null,capabilities:null,last_seen_at_micros:null};
+      devices.push(device);return route.fulfill({status:201,json:{device,manager_id:randomUUID(),token:"b".repeat(32)}});
      }return route.fulfill({json:devices});
     }
     if(path.endsWith("/pairing")&&req.method()==="DELETE"){
@@ -43,7 +43,7 @@ try {
       failNextAuthorization=false;
       return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET authorization",request_id:"authorization-failure-123"}});
      }
-     return route.fulfill({json:{manager_id:randomUUID(),device_id:devices[0]?.id??randomUUID(),authorization_code:"b".repeat(64)}});
+     return route.fulfill({json:{manager_id:randomUUID(),device_id:devices[0]?.id??randomUUID(),authorization_code:"b".repeat(32)}});
     }
     if(path.endsWith("/tasks")){if(failNextTasks){failNextTasks=false;return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET tasks",request_id:"tasks-failure-123"}})}return route.fulfill({json:[]});}
     return route.fulfill({json:session});
@@ -62,20 +62,13 @@ try {
    });
    assert.ok(Math.abs(menuToFirst-16)<2,String(menuToFirst));
    await page.getByRole("button",{name:"新建实例",exact:true}).click();
-   const dialog=page.getByRole("dialog",{name:"新建 Sunshine 实例"});
-   const input=dialog.getByLabel("实例名称",{exact:true});
-   for(const character of ["a","中","😀"]){await input.fill(character.repeat(32));assert.equal(await input.evaluate(e=>e.checkValidity()),true);}
-   await input.fill("名".repeat(33));assert.equal(await input.evaluate(e=>e.checkValidity()),false);
-   await input.fill("测试 Sunshine");
-   await dialog.getByRole("button",{name:"创建实例",exact:true}).click();
-   await expect(dialog.getByRole("alert")).toBeVisible();await expect(page.locator("body")).not.toContainText("SECRET details");
-   await dialog.getByRole("button",{name:"创建实例",exact:true}).click();
-   await expect(dialog).toHaveCount(0);
+   await expect(page.getByRole("alert")).toContainText("create-123");await expect(page.locator("body")).not.toContainText("SECRET details");
+   await page.getByRole("button",{name:"新建实例",exact:true}).click();
    await expect(page.getByRole("button",{name:"关闭通知",exact:true})).toBeVisible();
    await expect(page.getByRole("button",{name:"关闭通知",exact:true})).toHaveCount(0,{timeout:7000});
    await expect(page.getByRole("complementary")).toHaveCount(0);
    await page.getByRole("button",{name:"实例列表",exact:true}).click();
-   await expect(page.getByRole("link",{name:"选择实例 测试 Sunshine"})).toHaveText("测试 Sunshine");
+   await expect(page.getByRole("link",{name:"选择实例 新实例"})).toHaveText("新实例");
    const table=page.getByRole("table",{name:"Sunshine 实例列表"});
    const statistics=page.getByRole("table",{name:"实例统计"});
    await expect(statistics.getByRole("columnheader")).toHaveText(["统计项","总数 / 在线"]);
@@ -91,15 +84,17 @@ try {
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    assert.deepEqual((await new AxeBuilder({page}).withTags(["wcag2a","wcag2aa","wcag21aa"]).analyze()).violations,[]);
    failNextAuthorization=true;
-   await page.getByRole("link",{name:"选择实例 测试 Sunshine"}).click();
+   await page.getByRole("link",{name:"选择实例 新实例"}).click();
    await expect(page.getByRole("button",{name:"详细信息",exact:true})).toHaveAttribute("aria-pressed","true");
    await expect(page.getByText("等待配对",{exact:true})).toBeVisible();
    await expect(page.getByLabel("Sunshine 密码",{exact:true})).toHaveCount(0);
-   await expect(page.getByText("实例授权码",{exact:true})).toHaveCount(1);
+   await expect(page.getByText("账户名",{exact:true})).toHaveCount(1);
+   await expect(page.getByText("账户",{exact:true})).toHaveCount(1);
+   await expect(page.getByText("密码",{exact:true})).toHaveCount(1);
    await expect(page.getByRole("alert")).toContainText("authorization-failure-123");
    await page.getByRole("group",{name:"全局操作"}).getByRole("button",{name:"刷新",exact:true}).click();
    await expect.poll(()=>authorizationAttempts).toBeGreaterThan(1);
-   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(64));
+   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(32));
    await expect(page.getByRole("alert")).toHaveCount(0);
    failNextTasks=true;
    await page.getByRole("group",{name:"全局操作"}).getByRole("button",{name:"刷新",exact:true}).click();
@@ -119,8 +114,8 @@ try {
    await expect(page.getByRole("dialog")).toHaveCount(0);
    await page.getByRole("button",{name:"取消配对",exact:true}).click();await page.getByRole("button",{name:"确认",exact:true}).click();
    await expect(page.getByText("配对已取消",{exact:true})).toBeVisible();
-   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(64));
-   await checkWebLanguage(page, {"routes":[["instances","Instance list"],["details","Details"],["logs","Logs"]],"names":["测试 Sunshine"]});
+   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(32));
+   await checkWebLanguage(page, {"routes":[["instances","Instance list"],["details","Details"],["logs","Logs"]],"names":["新实例"]});
    await page.getByRole("button",{name:"实例列表",exact:true}).click();
    await page.getByRole("button",{name:"删除",exact:true}).click();
    await page.getByRole("button",{name:"取消",exact:true}).click();

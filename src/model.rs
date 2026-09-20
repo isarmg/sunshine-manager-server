@@ -21,6 +21,11 @@ pub struct DeviceView {
 pub struct DeviceName {
     pub name: String,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateDeviceRequest {
+    pub name: Option<String>,
+}
 #[derive(Debug, Serialize)]
 pub struct ClientAuthorization {
     pub manager_id: String,
@@ -48,4 +53,19 @@ pub fn validate_instance_name(value: &str) -> AppResult<()> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod create_device_tests {
+    use super::*;
+
+    #[test]
+    fn create_request_allows_the_server_default_only_when_name_is_omitted() {
+        let request: CreateDeviceRequest = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(request.name.is_none());
+        assert!(
+            serde_json::from_value::<CreateDeviceRequest>(serde_json::json!({"other": true}))
+                .is_err()
+        );
+    }
 }

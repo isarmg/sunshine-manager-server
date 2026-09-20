@@ -19,7 +19,7 @@ try {for(const engine of [chromium,firefox]){
    const req=route.request();const path=new URL(req.url()).pathname;
    if(path.endsWith("/sunshine/config-fields"))return route.fulfill({json:configFields});
    if(path.endsWith("/sunshine/devices"))return route.fulfill({json:[device]});
-   if(path.endsWith("/authorization"))return route.fulfill({json:{manager_id:randomUUID(),device_id:device.id,authorization_code:"b".repeat(64)}});
+   if(path.endsWith("/authorization"))return route.fulfill({json:{manager_id:randomUUID(),device_id:device.id,authorization_code:"b".repeat(32)}});
    if(path.endsWith("/tasks")){
     if(req.method()==="POST"){
      const command=req.postDataJSON();commands.push(command);

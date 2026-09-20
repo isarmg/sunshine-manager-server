@@ -3,8 +3,8 @@ use crate::{
     db,
     error::{AppError, AppResult},
     model::{
-        ClientAuthorization, DeviceName, DeviceView, OperationResolutionRequest,
-        UpdateClientAuthorization,
+        ClientAuthorization, CreateDeviceRequest, DeviceName, DeviceView,
+        OperationResolutionRequest, UpdateClientAuthorization,
     },
     operations::{OperationManager, OperationView},
     release_contract::{API_NAMESPACE, API_VERSION_PREFIX},
@@ -159,10 +159,10 @@ async fn config_fields() -> Json<&'static [sunshine_client_protocol::config::Fie
 async fn create_device(
     State(state): State<WorkerState>,
     Extension(actor): Extension<InternalIdentity>,
-    Json(value): Json<DeviceName>,
+    Json(value): Json<CreateDeviceRequest>,
 ) -> AppResult<Response> {
-    let ticket =
-        db::create_device(&state.pool, &state.secrets, &value.name, &actor.subject).await?;
+    let name = value.name.as_deref().unwrap_or("新实例");
+    let ticket = db::create_device(&state.pool, &state.secrets, name, &actor.subject).await?;
     Ok((
         StatusCode::CREATED,
         [("cache-control", "no-store")],

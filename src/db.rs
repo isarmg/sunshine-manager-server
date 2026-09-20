@@ -106,14 +106,14 @@ pub async fn get_device(pool: &SqlitePool, id: &str) -> AppResult<Device> {
 }
 pub async fn list_devices(pool: &SqlitePool) -> AppResult<Vec<DeviceView>> {
     let now = now_micros()?;
-    Ok(
-        sqlx::query_as::<_, Device>("SELECT * FROM devices ORDER BY created_at_micros,device_id")
-            .fetch_all(pool)
-            .await?
-            .iter()
-            .map(|device| device.view(now))
-            .collect(),
+    Ok(sqlx::query_as::<_, Device>(
+        "SELECT * FROM devices ORDER BY name COLLATE NOCASE,name,device_id",
     )
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|device| device.view(now))
+    .collect())
 }
 pub async fn create_device(
     pool: &SqlitePool,
@@ -124,7 +124,7 @@ pub async fn create_device(
     validate_instance_name(name)?;
     let id = Uuid::new_v4().to_string();
     let now = now_micros()?;
-    let token = random_token();
+    let token = random_authorization_code();
     let authorization_code_enc = secrets.encrypt_client_authorization(&id, &token)?;
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM devices")
@@ -165,7 +165,7 @@ pub async fn rotate_authorization(
     authorization_code: &str,
     actor: &str,
 ) -> AppResult<String> {
-    validate_token(authorization_code)?;
+    validate_authorization_code(authorization_code)?;
     let encrypted = secrets.encrypt_client_authorization(id, authorization_code)?;
     let now = now_micros()?;
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -196,7 +196,7 @@ pub async fn rotate_authorization(
     Ok(authorization_code.to_owned())
 }
 pub async fn resolve_pairing(pool: &SqlitePool, token: &str) -> AppResult<serde_json::Value> {
-    validate_token(token).map_err(|_| AppError::Unauthorized)?;
+    validate_pairing_authorization_code(token).map_err(|_| AppError::Unauthorized)?;
     let id: Option<String> = sqlx::query_scalar("SELECT device_id FROM devices WHERE enrollment_hash=? AND installation_id IS NULL AND revoked_at_micros IS NULL")
         .bind(token_hash(token).as_slice()).fetch_optional(pool).await?;
     let id = id.ok_or(AppError::Unauthorized)?;
@@ -283,7 +283,7 @@ pub async fn enroll(
     token: &str,
     credential: &str,
 ) -> AppResult<Binding> {
-    validate_token(token)?;
+    validate_pairing_authorization_code(token)?;
     validate_token(credential)?;
     if installation.is_nil() {
         return Err(AppError::BadRequest("安装身份无效".into()));
@@ -324,6 +324,23 @@ pub fn random_token() -> String {
     rand::rngs::OsRng.fill_bytes(&mut bytes);
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
+pub fn random_authorization_code() -> String {
+    const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut value = String::with_capacity(32);
+    let mut bytes = [0_u8; 64];
+    while value.len() < 32 {
+        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        for byte in bytes {
+            if byte < 252 {
+                value.push(ALPHABET[usize::from(byte % 36)] as char);
+                if value.len() == 32 {
+                    break;
+                }
+            }
+        }
+    }
+    value
+}
 pub fn token_hash(token: &str) -> [u8; 32] {
     Sha256::digest(token.as_bytes()).into()
 }
@@ -336,6 +353,29 @@ pub fn validate_token(token: &str) -> AppResult<()> {
         Err(AppError::BadRequest("设备凭据格式无效".into()))
     } else {
         Ok(())
+    }
+}
+pub fn validate_authorization_code(value: &str) -> AppResult<()> {
+    if value.len() != 32
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase())
+    {
+        Err(AppError::BadRequest("实例授权码格式无效".into()))
+    } else {
+        Ok(())
+    }
+}
+fn validate_pairing_authorization_code(value: &str) -> AppResult<()> {
+    if validate_authorization_code(value).is_ok()
+        || (value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')))
+    {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest("实例授权码格式无效".into()))
     }
 }
 pub async fn audit(
@@ -415,7 +455,7 @@ pub async fn require_current_runtime_state(
         let code = secrets
             .decrypt_client_authorization(&device_id, &encrypted)
             .map_err(|_| anyhow::anyhow!("stored client authorization is unreadable"))?;
-        validate_token(&code)
+        validate_pairing_authorization_code(&code)
             .map_err(|_| anyhow::anyhow!("stored client authorization is invalid"))?;
         if let Some(stored_hash) = enrollment_hash {
             anyhow::ensure!(
@@ -441,4 +481,23 @@ pub async fn require_current_runtime_state(
         cursor = ids.last().expect("non-empty batch").clone();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod authorization_code_tests {
+    use super::*;
+
+    #[test]
+    fn generated_authorization_codes_have_the_shared_format() {
+        for _ in 0..64 {
+            let value = random_authorization_code();
+            assert_eq!(value.len(), 32);
+            assert!(
+                value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase())
+            );
+            validate_authorization_code(&value).unwrap();
+        }
+    }
 }

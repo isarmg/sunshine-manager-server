@@ -21,6 +21,24 @@ async fn database() -> (tempfile::TempDir, sqlx::SqlitePool) {
 fn secrets() -> SecretBox {
     SecretBox::new("test", [7; 32]).unwrap()
 }
+
+#[tokio::test]
+async fn device_list_returns_every_instance_in_case_insensitive_name_order() {
+    let (_dir, pool) = database().await;
+    let secrets = secrets();
+    for name in ["zulu", "Bravo", "alpha"] {
+        db::create_device(&pool, &secrets, name, "admin")
+            .await
+            .unwrap();
+    }
+    let names = db::list_devices(&pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|device| device.name)
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["alpha", "Bravo", "zulu"]);
+}
 async fn registered(pool: &sqlx::SqlitePool) -> (String, String) {
     let ticket = db::create_device(pool, &secrets(), "测试设备", "admin")
         .await
@@ -146,7 +164,7 @@ async fn rotating_instance_authorization_revokes_client_and_requires_new_code() 
     )
     .await
     .unwrap();
-    let new_code = db::random_token();
+    let new_code = db::random_authorization_code();
     db::rotate_authorization(&pool, &secrets, &ticket.device.id, &new_code, "admin")
         .await
         .unwrap();

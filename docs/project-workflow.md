@@ -14,7 +14,7 @@ Server 只监听 loopback，不直接访问 Sunshine。Client 与 Sunshine 同�
 
 ## 2. 实例生命周期
 
-1. 管理员创建实例，Server 生成并加密保存 64 位十六进制长期授权码。
+1. 管理员创建实例，Server 生成并加密保存 32 位小写英文字母数字长期授权码。
 2. Client 用 Server origin 和授权码解析 manager/device identity，再提交 installation ID 与随机 credential。
 3. Client 通过 WSS 发送绑定、能力和 Sunshine 版本，随后心跳回报可达性及白名单配置快照。
 4. 管理员可查看或更换授权码；更换会清除旧绑定和 credential，Client 必须重新配对。
@@ -44,5 +44,5 @@ Client 执行前再次校验 binding、permission、revision、字段白名单�
 Server 仅发布 Linux AMD64 binary 与 Web。build.rs 从 `Cargo.lock` 自动派生唯一 Foundation revision；正式
 binary 还绑定源码 revision、Schema revision 7 和 Web 资产。Release 树需通过自校验和篡改负例。
 
-产品没有 backup/restore/migration/key rotation。当前 `sarmg-upgrade` 未支持 0.11.4，不能使用旧 0.8.0
+产品没有 backup/restore/migration/key rotation。当前 `sarmg-upgrade` 未支持 0.11.5，不能使用旧 0.8.0
 适配器；需要转换时先在升级仓增加精确输入/输出身份和隔离恢复验收。
