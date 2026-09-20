@@ -12,11 +12,11 @@ try {
  for(const engine of [chromium,firefox]){
   const browser=await engine.launch();
   try {
-   const context=await browser.newContext({ locale: "zh-CN", viewport:{width:390,height:844}});const page=await context.newPage();const errors=[];const devices=[];let posts=0;
+   const context=await browser.newContext({ locale: "zh-CN", viewport:{width:390,height:844}});const page=await context.newPage();const errors=[];const devices=[];let posts=0;let configAttempts=0;let authorizationAttempts=0;let failNextAuthorization=false;let failNextTasks=false;
    page.on("pageerror",e=>errors.push(e.message));
    await page.route("**/api/v2/**",async route=>{
     const req=route.request();const path=new URL(req.url()).pathname;
-    if(path.endsWith("/sunshine/config-fields"))return route.fulfill({json:configFields});
+    if(path.endsWith("/sunshine/config-fields")){configAttempts++;if(configAttempts===1)return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET fields",request_id:"fields-failure-123"}});return route.fulfill({json:configFields});}
     if(path.endsWith("/sunshine/devices")){
      if(req.method()==="POST"){
       posts++;assert.equal(req.headers()["x-csrf-token"],session.csrf_token);
@@ -33,11 +33,23 @@ try {
     if(path.match(/\/sunshine\/devices\/[^/]+$/)&&req.method()==="DELETE"){
      devices.splice(0,1);return route.fulfill({status:204})
     }
-    if(path.endsWith("/authorization"))return route.fulfill({json:{authorization_code:"b".repeat(64)}});
-    if(path.endsWith("/tasks"))return route.fulfill({json:[]});
+    if(path.endsWith("/authorization")){
+     authorizationAttempts++;
+     if(failNextAuthorization){
+      failNextAuthorization=false;
+      return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET authorization",request_id:"authorization-failure-123"}});
+     }
+     return route.fulfill({json:{authorization_code:"b".repeat(64)}});
+    }
+    if(path.endsWith("/tasks")){if(failNextTasks){failNextTasks=false;return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET tasks",request_id:"tasks-failure-123"}})}return route.fulfill({json:[]});}
     return route.fulfill({json:session});
    });
    await page.goto("http://127.0.0.1:"+server.httpServer.address().port);
+   await expect(page.getByRole("alert")).toContainText("fields-failure-123");
+   await expect(page.locator("body")).not.toContainText("SECRET fields");
+   await page.getByRole("alert").getByRole("button",{name:"重试",exact:true}).click();
+   await expect.poll(()=>configAttempts).toBeGreaterThan(1);
+   await expect(page.getByRole("alert")).toHaveCount(0);
    await checkHeaderActions(page, "/sunshine/devices");
    const menuToFirst=await page.evaluate(()=>{
     const header=document.querySelector(".sarmg-page-header");const first=[...document.querySelectorAll("h2")].find(node=>node.textContent==="统计");
@@ -65,11 +77,22 @@ try {
    assert.equal(await table.locator("tbody tr").evaluate(row=>getComputedStyle(row).display),"table-row");
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    assert.deepEqual((await new AxeBuilder({page}).withTags(["wcag2a","wcag2aa","wcag21aa"]).analyze()).violations,[]);
+   failNextAuthorization=true;
    await page.getByRole("button",{name:"选择实例 测试 Sunshine"}).click();
    await expect(page.getByRole("button",{name:"详细信息",exact:true})).toHaveAttribute("aria-pressed","true");
    await expect(page.getByText("等待配对",{exact:true})).toBeVisible();
    await expect(page.getByLabel("Sunshine 密码",{exact:true})).toHaveCount(0);
    await expect(page.getByText("实例授权码",{exact:true})).toBeVisible();
+   await expect(page.getByRole("alert")).toContainText("authorization-failure-123");
+   await page.getByRole("group",{name:"全局操作"}).getByRole("button",{name:"刷新",exact:true}).click();
+   await expect.poll(()=>authorizationAttempts).toBeGreaterThan(1);
+   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(64));
+   await expect(page.getByRole("alert")).toHaveCount(0);
+   failNextTasks=true;
+   await page.getByRole("group",{name:"全局操作"}).getByRole("button",{name:"刷新",exact:true}).click();
+   await expect(page.getByRole("alert")).toContainText("tasks-failure-123");
+   await expect(page.locator("body")).not.toContainText("SECRET tasks");
+   await expect(page.getByRole("alert")).toHaveCount(0,{timeout:5000});
    for(const theme of ["dark","light"]){
     await page.getByRole("button",{name:theme==="dark"?"切换到深色模式":"切换到浅色模式",exact:true}).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme",theme);
@@ -80,7 +103,7 @@ try {
    await expect(page.locator("body")).toContainText("更换后客户端必须重新配对");
    await page.getByRole("button",{name:"取消配对",exact:true}).click();await page.getByRole("button",{name:"确认",exact:true}).click();
    await expect(page.getByText("配对已取消",{exact:true})).toBeVisible();
-   await expect(page.getByText("b".repeat(64),{exact:true})).toBeVisible();
+   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(64));
    await checkWebLanguage(page, {"routes":[["instances","Instance list"],["details","Details"],["logs","Logs"]],"names":["测试 Sunshine"]});
    await page.getByRole("button",{name:"详细信息",exact:true}).click();
    await page.getByRole("button",{name:"删除实例",exact:true}).click();await page.getByRole("button",{name:"确认",exact:true}).click();

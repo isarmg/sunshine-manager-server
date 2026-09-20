@@ -1,6 +1,6 @@
 # Sunshine Manager Server 当前功能与取舍清单
 
-本文描述 `0.11.0` 与协议 `sunshine-management/2`。Server、Client 和协议只支持官方 Sunshine
+本文描述 `0.11.1` 与协议 `sunshine-management/2`。Server、Client 和协议只支持官方 Sunshine
 `v2026.914.233613`，不注册旧协议、旧版本或旧状态的回退分支。
 
 ## 拓扑与所有权
