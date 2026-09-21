@@ -12,5 +12,8 @@
 .sunshine-item { border-block-end: 1px solid currentColor; padding-block-end: 12px; min-width: 0; }
 .sunshine-cover { max-width: 100%; max-height: 240px; object-fit: contain; }
 .sunshine-logs { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; }
+.sarmg-table .sarmg-actions > .sarmg-button { display: inline-flex; align-items: center; justify-content: flex-start; min-width: 44px; padding-inline: 0; text-align: left; }
+.sarmg-instance-link, .sarmg-instance-link:visited { color: inherit; text-decoration: none; }
+.sarmg-instance-link:hover, .sarmg-instance-link:focus-visible { text-decoration: underline; }
 @media (max-width: 48rem) { .sunshine-fields { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 36rem) { .sunshine-detail-list { grid-template-columns: max-content minmax(0, 1fr); gap: .45rem .75rem; } }

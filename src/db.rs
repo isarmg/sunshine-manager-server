@@ -326,14 +326,14 @@ pub fn random_token() -> String {
 }
 pub fn random_authorization_code() -> String {
     const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
-    let mut value = String::with_capacity(32);
+    let mut value = String::with_capacity(36);
     let mut bytes = [0_u8; 64];
-    while value.len() < 32 {
+    while value.len() < 36 {
         rand::rngs::OsRng.fill_bytes(&mut bytes);
         for byte in bytes {
             if byte < 252 {
                 value.push(ALPHABET[usize::from(byte % 36)] as char);
-                if value.len() == 32 {
+                if value.len() == 36 {
                     break;
                 }
             }
@@ -356,7 +356,7 @@ pub fn validate_token(token: &str) -> AppResult<()> {
     }
 }
 pub fn validate_authorization_code(value: &str) -> AppResult<()> {
-    if value.len() != 32
+    if value.len() != 36
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase())
@@ -367,12 +367,7 @@ pub fn validate_authorization_code(value: &str) -> AppResult<()> {
     }
 }
 fn validate_pairing_authorization_code(value: &str) -> AppResult<()> {
-    if validate_authorization_code(value).is_ok()
-        || (value.len() == 64
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')))
-    {
+    if validate_authorization_code(value).is_ok() {
         Ok(())
     } else {
         Err(AppError::BadRequest("实例授权码格式无效".into()))
@@ -491,7 +486,7 @@ mod authorization_code_tests {
     fn generated_authorization_codes_have_the_shared_format() {
         for _ in 0..64 {
             let value = random_authorization_code();
-            assert_eq!(value.len(), 32);
+            assert_eq!(value.len(), 36);
             assert!(
                 value
                     .bytes()

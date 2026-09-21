@@ -8,7 +8,7 @@ import {randomUUID} from "node:crypto";
 const session={authenticated:true,user_id:"A".repeat(43),username:"admin",role:"admin",csrf_token:"A".repeat(43)};
 const configFields=[];
 async function assertColumnContentAlignment(table){
- const offsets=await table.evaluate(element=>{const textStart=cell=>{const walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode())&&!text.textContent.trim()){}if(!text)throw new Error("table cell has no visible text");const range=document.createRange();range.selectNodeContents(text);return range.getBoundingClientRect().left};const contentStart=cell=>cell.firstElementChild?.getBoundingClientRect().left??textStart(cell);const headings=[...element.querySelectorAll("thead th")],values=[...element.querySelector("tbody tr").children];if(headings.length!==values.length)throw new Error("table column count mismatch");return headings.map((heading,index)=>Math.abs(textStart(heading)-contentStart(values[index])))});
+ const offsets=await table.evaluate(element=>{const textStart=cell=>{const walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode())&&!text.textContent.trim()){}if(!text)throw new Error("table cell has no visible text");const range=document.createRange();range.selectNodeContents(text);return range.getBoundingClientRect().left};const contentStart=cell=>textStart(cell);const headings=[...element.querySelectorAll("thead th")],values=[...element.querySelector("tbody tr").children];if(headings.length!==values.length)throw new Error("table column count mismatch");return headings.map((heading,index)=>Math.abs(textStart(heading)-contentStart(values[index])))});
  assert.ok(offsets.every(offset=>offset<0.5),`column content offsets: ${JSON.stringify(offsets)}`);
 }
 const server=await preview({preview:{host:"127.0.0.1",port:0,strictPort:true}});
@@ -24,10 +24,10 @@ try {
     if(path.endsWith("/sunshine/devices")){
      if(req.method()==="POST"){
       posts++;assert.equal(req.headers()["x-csrf-token"],session.csrf_token);
-      assert.deepEqual(req.postDataJSON(),{});
+      assert.deepEqual(req.postDataJSON(),{name:"新实例"});
       if(posts===1)return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET details",request_id:"create-123"}});
       const device={id:randomUUID(),name:"新实例",registered:false,pairing_pending:true,revoked:false,client_online:false,sunshine_reachable:null,configuration_state:"unknown",snapshot:null,capabilities:null,last_seen_at_micros:null};
-      devices.push(device);return route.fulfill({status:201,json:{device,manager_id:randomUUID(),token:"b".repeat(32)}});
+      devices.push(device);return route.fulfill({status:201,json:{device,manager_id:randomUUID(),token:"b".repeat(36)}});
      }return route.fulfill({json:devices});
     }
     if(path.endsWith("/pairing")&&req.method()==="DELETE"){
@@ -43,7 +43,7 @@ try {
       failNextAuthorization=false;
       return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET authorization",request_id:"authorization-failure-123"}});
      }
-     return route.fulfill({json:{manager_id:randomUUID(),device_id:devices[0]?.id??randomUUID(),authorization_code:"b".repeat(32)}});
+     return route.fulfill({json:{manager_id:randomUUID(),device_id:devices[0]?.id??randomUUID(),authorization_code:"b".repeat(36)}});
     }
     if(path.endsWith("/tasks")){if(failNextTasks){failNextTasks=false;return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET tasks",request_id:"tasks-failure-123"}})}return route.fulfill({json:[]});}
     return route.fulfill({json:session});
@@ -65,6 +65,9 @@ try {
    await expect(page.getByRole("alert")).toContainText("create-123");await expect(page.locator("body")).not.toContainText("SECRET details");
    await page.getByRole("button",{name:"新建实例",exact:true}).click();
    await expect(page.getByRole("button",{name:"关闭通知",exact:true})).toBeVisible();
+   await expect(page).toHaveURL(/#instances$/);
+   await expect(page.getByRole("button",{name:"实例列表",exact:true})).toHaveAttribute("aria-pressed","true");
+   await expect(page.getByRole("link",{name:"选择实例 新实例"})).toHaveText("新实例");
    await expect(page.getByRole("button",{name:"关闭通知",exact:true})).toHaveCount(0,{timeout:7000});
    await expect(page.getByRole("complementary")).toHaveCount(0);
    await page.getByRole("button",{name:"实例列表",exact:true}).click();
@@ -75,8 +78,13 @@ try {
    await expect(statistics.getByRole("rowheader")).toHaveText(["总数","Windows","Linux","macOS"]);
    await expect(statistics.locator("tbody td")).toHaveText(["1 / 0","0 / 0","0 / 0","0 / 0"]);
    await expect(table.locator("tbody tr")).toHaveCount(1);
-   await expect(table.getByRole("columnheader")).toHaveText(["实例名称","注册状态","客户端 状态","Sunshine 接口","配置状态","操作系统","最近连接","删除"]);
+   await expect(table.getByRole("columnheader")).toHaveText(["实例名称","注册状态","客户端 状态","Sunshine 接口","配置状态","操作系统/架构","最近连接","删除"]);
    await expect(table.locator("tbody td")).toHaveText(["等待配对","离线","未知","尚未核对","尚未上报","尚未连接","删除"]);
+   await expect(table).not.toContainText(devices[0].id);
+   await expect(table).not.toContainText("b".repeat(36));
+   const instanceNameStyle=await table.getByRole("link",{name:"选择实例 新实例"}).evaluate(element=>({color:getComputedStyle(element).color,parentColor:getComputedStyle(element.parentElement).color,decoration:getComputedStyle(element).textDecorationLine}));
+   assert.equal(instanceNameStyle.color,instanceNameStyle.parentColor);
+   assert.equal(instanceNameStyle.decoration,"none");
    assert.ok((await table.locator("th, td").evaluateAll(elements=>elements.map(element=>getComputedStyle(element).textAlign))).every(value=>value==="left"));
    await assertColumnContentAlignment(table);
    assert.ok((await table.locator(".sarmg-actions").evaluateAll(elements=>elements.map(element=>getComputedStyle(element).justifyContent))).every(value=>value==="flex-start"));
@@ -86,15 +94,20 @@ try {
    failNextAuthorization=true;
    await page.getByRole("link",{name:"选择实例 新实例"}).click();
    await expect(page.getByRole("button",{name:"详细信息",exact:true})).toHaveAttribute("aria-pressed","true");
+   const pairingDetails=page.getByRole("region",{name:"配对账户信息"});
+   await expect(pairingDetails.getByRole("heading",{name:"新实例",exact:true})).toBeVisible();
+   await expect(pairingDetails).toContainText(devices[0].id);
    await expect(page.getByText("等待配对",{exact:true})).toBeVisible();
    await expect(page.getByLabel("Sunshine 密码",{exact:true})).toHaveCount(0);
    await expect(page.getByText("账户名",{exact:true})).toHaveCount(1);
    await expect(page.getByText("账户",{exact:true})).toHaveCount(1);
    await expect(page.getByText("密码",{exact:true})).toHaveCount(1);
+   await expect(page.getByRole("region",{name:"实例设置"})).toBeVisible();
+   await expect(page.getByRole("region",{name:"Sunshine 状态"})).toBeVisible();
    await expect(page.getByRole("alert")).toContainText("authorization-failure-123");
    await page.getByRole("group",{name:"全局操作"}).getByRole("button",{name:"刷新",exact:true}).click();
    await expect.poll(()=>authorizationAttempts).toBeGreaterThan(1);
-   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(32));
+   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(36));
    await expect(page.getByRole("alert")).toHaveCount(0);
    failNextTasks=true;
    await page.getByRole("group",{name:"全局操作"}).getByRole("button",{name:"刷新",exact:true}).click();
@@ -114,7 +127,7 @@ try {
    await expect(page.getByRole("dialog")).toHaveCount(0);
    await page.getByRole("button",{name:"取消配对",exact:true}).click();await page.getByRole("button",{name:"确认",exact:true}).click();
    await expect(page.getByText("配对已取消",{exact:true})).toBeVisible();
-   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(32));
+   await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(36));
    await checkWebLanguage(page, {"routes":[["instances","Instance list"],["details","Details"],["logs","Logs"]],"names":["新实例"]});
    await page.getByRole("button",{name:"实例列表",exact:true}).click();
    await page.getByRole("button",{name:"删除",exact:true}).click();

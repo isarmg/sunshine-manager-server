@@ -14,7 +14,7 @@ Server 只监听 loopback，不直接访问 Sunshine。Client 与 Sunshine 同�
 
 ## 2. 实例生命周期
 
-1. 管理员创建实例，Server 生成并加密保存 32 位小写英文字母数字长期授权码。
+1. 管理员创建实例，Server 生成并加密保存 36 位小写英文字母数字长期授权码。
 2. Client 用 Server origin 和授权码解析 manager/device identity，再提交 installation ID 与随机 credential。
 3. Client 通过 WSS 发送绑定、能力和 Sunshine 版本，随后心跳回报可达性及白名单配置快照。
 4. 管理员可查看或更换授权码；更换会清除旧绑定和 credential，Client 必须重新配对。
