@@ -1,4 +1,4 @@
-# 简化配对（Server 0.11.6 / Client 0.2.2）
+# 简化配对（Server 0.11.7 / Client 0.2.2）
 
 Client 只需填写 Server 地址、36 位小写英文字母数字实例授权码、本机 Sunshine HTTPS 回环地址及账号密码。Manager ID、
 设备 ID 不再是用户输入项。Client 与 Server 需同时部署支持当前 v2 协议的版本。
