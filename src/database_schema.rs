@@ -140,18 +140,16 @@ pub async fn initialize_empty(pool: &SqlitePool) -> anyhow::Result<()> {
         .bind(uuid::Uuid::new_v4().to_string())
         .execute(&mut *transaction)
         .await?;
-    let created_at_micros = i64::try_from(
+    let created_at_micros = u64::try_from(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_micros(),
     )?;
-    sqlx::query(
-        "INSERT INTO _sarmg_platform_metadata(\
-           singleton,platform_generation,platform_schema_revision,profile,created_at_micros\
-         ) VALUES(1,1,1,'server-control-plane',?)",
+    sarmg_platform_db::initialize_current_platform_metadata(
+        &mut transaction,
+        "server-control-plane",
+        created_at_micros,
     )
-    .bind(created_at_micros)
-    .execute(&mut *transaction)
     .await?;
     let actual = sarmg_sqlite::schema_fingerprint(&mut *transaction).await?;
     ensure!(
@@ -177,13 +175,7 @@ pub async fn validate_pool(pool: &SqlitePool) -> anyhow::Result<()> {
     sarmg_sqlite::require_pool_current_schema(pool, &current_schema_identity())
         .await
         .context("database is not the exact current Sunshine Manager schema; use sarmg-upgrade")?;
-    let platform = sarmg_platform_db::read_platform_metadata(pool).await?;
-    ensure!(
-        platform.platform_generation == sarmg_platform_db::PLATFORM_GENERATION
-            && platform.platform_schema_revision == sarmg_platform_db::PLATFORM_SCHEMA_REVISION
-            && platform.profile == "server-control-plane",
-        "database platform metadata is not the exact current contract"
-    );
+    sarmg_platform_db::require_current_platform_metadata(pool, "server-control-plane").await?;
     Ok(())
 }
 
