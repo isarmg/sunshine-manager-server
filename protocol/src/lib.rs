@@ -17,6 +17,17 @@ pub const READY_HEALTH_PATH: &str = "/readyz";
 pub const PAIRING_PATH: &str = "/sunshine-client/v2/pairing";
 pub const CONNECT_PATH: &str = "/sunshine-client/v2/connect";
 pub const MAX_MESSAGE_BYTES: usize = 64 * 1024;
+pub const AUTHORIZATION_CODE_LENGTH: usize = 36;
+
+/// Return whether a Sunshine instance authorization code has the exact
+/// Manager-issued wire format. Keep this in the shared protocol crate so the
+/// Manager and native Clients cannot silently drift to different lengths.
+pub fn is_valid_authorization_code(value: &str) -> bool {
+    value.len() == AUTHORIZATION_CODE_LENGTH
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase())
+}
 
 pub fn is_supported_sunshine_version(version: &str) -> bool {
     SUPPORTED_SUNSHINE_VERSIONS.contains(&version)
@@ -1006,6 +1017,18 @@ mod macos_platform_tests {
 #[cfg(test)]
 mod protocol_v2_tests {
     use super::*;
+
+    #[test]
+    fn authorization_code_format_is_shared_and_exact() {
+        assert!(is_valid_authorization_code(&"a0".repeat(18)));
+        assert!(!is_valid_authorization_code(&"a".repeat(35)));
+        assert!(!is_valid_authorization_code(&"a".repeat(37)));
+        assert!(!is_valid_authorization_code(&"A".repeat(36)));
+        assert!(!is_valid_authorization_code(&format!(
+            "{}-",
+            "a".repeat(35)
+        )));
+    }
 
     fn binding() -> Binding {
         Binding {

@@ -8,7 +8,9 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{Sqlite, SqlitePool, Transaction};
 use std::time::{SystemTime, UNIX_EPOCH};
-use sunshine_client_protocol::{Binding, Capabilities, ConfigSnapshot};
+use sunshine_client_protocol::{
+    AUTHORIZATION_CODE_LENGTH, Binding, Capabilities, ConfigSnapshot, is_valid_authorization_code,
+};
 use uuid::Uuid;
 pub const SCHEMA: &str = "sunshine";
 pub use crate::database_schema::{initialize_empty, open_existing, open_or_initialize};
@@ -326,14 +328,14 @@ pub fn random_token() -> String {
 }
 pub fn random_authorization_code() -> String {
     const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
-    let mut value = String::with_capacity(36);
+    let mut value = String::with_capacity(AUTHORIZATION_CODE_LENGTH);
     let mut bytes = [0_u8; 64];
-    while value.len() < 36 {
+    while value.len() < AUTHORIZATION_CODE_LENGTH {
         rand::rngs::OsRng.fill_bytes(&mut bytes);
         for byte in bytes {
             if byte < 252 {
                 value.push(ALPHABET[usize::from(byte % 36)] as char);
-                if value.len() == 36 {
+                if value.len() == AUTHORIZATION_CODE_LENGTH {
                     break;
                 }
             }
@@ -356,11 +358,7 @@ pub fn validate_token(token: &str) -> AppResult<()> {
     }
 }
 pub fn validate_authorization_code(value: &str) -> AppResult<()> {
-    if value.len() != 36
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase())
-    {
+    if !is_valid_authorization_code(value) {
         Err(AppError::BadRequest("实例授权码格式无效".into()))
     } else {
         Ok(())
@@ -486,12 +484,8 @@ mod authorization_code_tests {
     fn generated_authorization_codes_have_the_shared_format() {
         for _ in 0..64 {
             let value = random_authorization_code();
-            assert_eq!(value.len(), 36);
-            assert!(
-                value
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase())
-            );
+            assert_eq!(value.len(), AUTHORIZATION_CODE_LENGTH);
+            assert!(is_valid_authorization_code(&value));
             validate_authorization_code(&value).unwrap();
         }
     }
