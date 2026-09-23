@@ -15,7 +15,7 @@ HTTPS 回环地址上的固定 Sunshine API 或固定系统服务适配器。协
 - 维护：重置显示设备持久状态与 Portal token。
 - 服务：读取状态，通过 Windows `SunshineService` 或 Linux `sunshine.service` 启动、停止、重启。
 
-Client 直接声明支持 Sunshine 专用管理能力，不再保存或询问权限开关。macOS 没有经过定义的固定 Sunshine 服务，
+Client 通过 Hello 声明支持的 Sunshine 专用管理能力。macOS 没有经过定义的固定 Sunshine 服务，
 因此只在该领域上报告不可用；其他 API 能力保持启用。
 
 ## 修订、去重与结果

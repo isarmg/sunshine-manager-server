@@ -27,7 +27,7 @@ Manager。
 | 显示与输入 | 重置显示设备持久状态、重置 Portal token、读取 VirtualHID/ViGEmBus 状态 | 使用固定上游端点，不接收路径、驱动安装命令或任意 HTTP |
 | 服务 | 读取状态并启动、停止、重启 | Windows 固定 `SunshineService`，Linux 固定 systemd `sunshine.service`；macOS 未声明固定服务能力 |
 
-Client 配对后直接启用 Sunshine 专用管理能力，不再询问重启、应用命令或服务控制权限。Web 对会中断会话、
+Client 配对后按当前协议报告 Sunshine 专用管理能力，包含重启、应用命令和平台支持的服务控制。Web 对会中断会话、
 删除资源或执行主机应用命令的单次操作仍要求管理员确认，并保留 15 分钟派发期限。
 
 ## 协议、任务与证据

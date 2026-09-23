@@ -17,7 +17,7 @@ Sunshine 用户名和密码仅在 Client 本机配置，不在 Manager 的连接
 数值范围或枚举、最大长度、是否需要重启、已验证的 Sunshine 版本、适用操作系统及硬件前置条件。
 协议校验、握手字段集合和管理页都消费这份定义；管理页通过受保护的
 `GET /api/v2/sunshine/config-fields` 获取定义，并与 Client 上报的 `managed_fields`、Sunshine 版本和
-操作系统取交集。TypeScript 只保留翻译标签，不再复制范围和选项。
+操作系统取交集。TypeScript 提供翻译标签，范围和选项读取 Server 字段定义。
 
 新增字段必须先进入该定义并完成对应 Client 版本的真实 Sunshine 验收。字段元数据出现在 Server
 源码中不表示旧 Client 自动获得能力；协议包仍按发布提交固定，Server 与 Client 发布时必须更新同一
@@ -52,3 +52,13 @@ Client 管理设备配对不是 Sunshine–Moonlight 串流配对，不改变原
 `web` 中的 `npm run test:browser` 覆盖管理界面；构建 Manager 和 Client 开发二进制后，
 `node tests/client-end-to-end.mjs` 验证真实浏览器、Manager、独立 Client 与 HTTPS/WSS，
 其中 Sunshine 仍是协议夹具，不可当作真实 Sunshine 硬件或运行时验收。
+
+## Web 编辑与状态显示
+
+实例名称的未提交编辑在列表轮询和手动刷新时保留；保存成功后输入框采用服务端确认的名称。
+应用的分离命令按原始多行文本编辑，提交时逐行去除首尾空白并忽略空行。超过 16 条命令时显示错误并阻止提交，
+不截断用户输入。涉及主机命令的保存需要确认；取消确认不提交任务，也不清除草稿。
+
+新建应用通过明确按钮打开，取消后关闭编辑器，包括应用列表为空的情况。
+封面仅接受最多 30 KiB 的 PNG；更换所选文件后重新校验，合法文件可继续提交。
+服务状态按服务读取与服务控制报告中最近的更新时间显示。
