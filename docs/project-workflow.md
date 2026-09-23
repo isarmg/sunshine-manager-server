@@ -44,5 +44,5 @@ Client 执行前再次校验 binding、permission、revision、字段白名单�
 Server 仅发布 Linux AMD64 binary 与 Web。build.rs 从 `Cargo.lock` 自动派生唯一 Foundation revision；正式
 binary 还绑定源码 revision、Schema revision 7 和 Web 资产。Release 树需通过自校验和篡改负例。
 
-产品没有 backup/restore/migration/key rotation。当前 `sarmg-upgrade` 未支持 0.11.8，不能使用旧 0.8.0
+产品没有 backup/restore/migration/key rotation。当前 `sarmg-upgrade` 未支持 0.11.9，不能使用旧 0.8.0
 适配器；需要转换时先在升级仓增加精确输入/输出身份和隔离恢复验收。
