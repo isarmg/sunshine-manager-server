@@ -49,6 +49,8 @@ try {
      }
      return route.fulfill({json:{manager_id:randomUUID(),device_id:devices[0]?.id??randomUUID(),authorization_code:"b".repeat(36)}});
     }
+    if(path.endsWith("/tasks/calendar"))return route.fulfill({json:{today:"2030-01-02"}});
+    if(path.endsWith("/tasks/summary"))return route.fulfill({json:{blocking_count:0}});
     if(path.endsWith("/tasks")){if(failNextTasks){failNextTasks=false;return route.fulfill({status:503,json:{code:"service_unavailable",retryable:true,message:"SECRET tasks",request_id:"tasks-failure-123"}})}return route.fulfill({json:[]});}
     return route.fulfill({json:session});
    });
@@ -108,7 +110,7 @@ try {
    await expect(page.getByText("密码",{exact:true})).toHaveCount(1);
    await expect(page.getByRole("region",{name:"实例设置"})).toBeVisible();
    await expect(page.getByRole("region",{name:"Sunshine 状态"})).toBeVisible();
-   await expect(page.getByRole("alert")).toContainText("authorization-failure-123");
+   await expect(page.getByRole("alert").filter({hasText:"无法读取实例授权码"})).toContainText("authorization-failure-123");
    await page.getByRole("group",{name:"全局操作"}).getByRole("button",{name:"刷新",exact:true}).click();
    await expect.poll(()=>authorizationAttempts).toBeGreaterThan(1);
    await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(36));
