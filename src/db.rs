@@ -193,9 +193,64 @@ pub async fn rotate_authorization(
             Err(AppError::Conflict("已撤销实例不能更换授权码".into()))
         };
     }
+    retire_operations_for_authorization_rotation(&mut tx, id, now).await?;
     audit(&mut tx, "device.authorization.rotate", id, actor, None).await?;
     tx.commit().await?;
     Ok(authorization_code.to_owned())
+}
+
+async fn retire_operations_for_authorization_rotation(
+    tx: &mut Transaction<'_, Sqlite>,
+    device_id: &str,
+    now: i64,
+) -> AppResult<()> {
+    // Rotation fences delivery in the same write transaction that clears the
+    // old credential. Pending work did not run; running work needs review.
+    let operations: Vec<(String, String)> = sqlx::query_as(
+        "SELECT operation_id,state FROM _sarmg_operations \
+         WHERE target_key=? AND state IN ('pending','running') ORDER BY operation_id",
+    )
+    .bind(device_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    for (operation_id, from) in operations {
+        let to = if from == "pending" {
+            "failed"
+        } else {
+            "unknown"
+        };
+        let changed = sqlx::query(
+            "UPDATE _sarmg_operations SET state=?,error_code='authorization_rotated',\
+             lease_owner=NULL,lease_expiry_micros=NULL,updated_at_micros=? \
+             WHERE operation_id=? AND state=?",
+        )
+        .bind(to)
+        .bind(now)
+        .bind(&operation_id)
+        .bind(&from)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+        if changed != 1 {
+            return Err(AppError::Internal(anyhow::anyhow!(
+                "operation changed during authorization rotation"
+            )));
+        }
+        sqlx::query(
+            "INSERT INTO _sarmg_operation_audit_outbox \
+             (event_id,operation_id,from_state,to_state,payload_json,created_at_micros) \
+             VALUES(?,?,?,?,?,?)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(&operation_id)
+        .bind(&from)
+        .bind(to)
+        .bind(serde_json::json!({"from":from,"to":to}).to_string())
+        .bind(now)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
 }
 pub async fn resolve_pairing(pool: &SqlitePool, token: &str) -> AppResult<serde_json::Value> {
     validate_pairing_authorization_code(token).map_err(|_| AppError::Unauthorized)?;

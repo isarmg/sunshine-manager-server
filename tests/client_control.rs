@@ -196,6 +196,102 @@ async fn rotating_instance_authorization_revokes_client_and_requires_new_code() 
 }
 
 #[tokio::test]
+async fn rotating_authorization_retires_old_tasks_before_the_same_installation_reenrolls() {
+    let (_dir, pool) = database().await;
+    let (id, old_credential) = registered(&pool).await;
+    let installation: String =
+        sqlx::query_scalar("SELECT installation_id FROM devices WHERE device_id=?")
+            .bind(&id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let installation = Uuid::parse_str(&installation).unwrap();
+    let ops = manager(&pool);
+    let running = ops
+        .enqueue("admin", &id, "old-running", Command::ReadConfig {})
+        .await
+        .unwrap();
+    session(&pool, &id, "old-session").await;
+    assert_eq!(
+        ops.next(&id, "old-session")
+            .await
+            .unwrap()
+            .unwrap()
+            .operation
+            .operation_id,
+        running.operation_id
+    );
+    let pending_read = ops
+        .enqueue("admin", &id, "old-read", Command::ReadDiagnostics {})
+        .await
+        .unwrap();
+    let pending_write = ops
+        .enqueue(
+            "admin",
+            &id,
+            "old-restart",
+            Command::Restart {
+                expected_revision: "a".repeat(64),
+                administrator_confirmed: true,
+            },
+        )
+        .await
+        .unwrap();
+
+    let code = db::random_authorization_code();
+    db::rotate_authorization(&pool, &secrets(), &id, &code, "admin")
+        .await
+        .unwrap();
+    assert!(
+        db::authenticate_device(&pool, &old_credential)
+            .await
+            .is_err()
+    );
+    for (operation, expected_state, expected_error) in [
+        (&running, OperationState::Unknown, "authorization_rotated"),
+        (
+            &pending_read,
+            OperationState::Failed,
+            "authorization_rotated",
+        ),
+        (
+            &pending_write,
+            OperationState::Failed,
+            "authorization_rotated",
+        ),
+    ] {
+        let view = ops
+            .get_for_actor("admin", &operation.operation_id)
+            .await
+            .unwrap();
+        assert_eq!(view.state, expected_state);
+        let error: String =
+            sqlx::query_scalar("SELECT error_code FROM _sarmg_operations WHERE operation_id=?")
+                .bind(&operation.operation_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(error, expected_error);
+        let events: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM _sarmg_operation_audit_outbox \
+             WHERE operation_id=? AND to_state=?",
+        )
+        .bind(&operation.operation_id)
+        .bind(expected_state.as_str())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(events, 1);
+    }
+
+    db::enroll(&pool, &id, installation, &code, &db::random_token())
+        .await
+        .unwrap();
+    session(&pool, &id, "new-session").await;
+    assert!(ops.next(&id, "new-session").await.unwrap().is_none());
+}
+
+#[tokio::test]
 async fn deleting_an_instance_removes_it_and_invalidates_its_client_credential() {
     let (_dir, pool) = database().await;
     let ticket = db::create_device(&pool, &secrets(), "delete", "admin")
