@@ -363,7 +363,7 @@ pub async fn enroll(
 pub async fn authenticate_device(pool: &SqlitePool, credential: &str) -> AppResult<Device> {
     validate_token(credential).map_err(|_| AppError::Unauthorized)?;
     sqlx::query_as("SELECT * FROM devices WHERE credential_hash=? AND revoked_at_micros IS NULL AND installation_id IS NOT NULL")
-        .bind(token_hash(credential).as_slice()).fetch_optional(pool).await?.ok_or(AppError::Unauthorized)
+        .bind(token_hash(credential).as_slice()).fetch_optional(pool).await?.ok_or(AppError::DeviceCredentialRejected)
 }
 pub async fn binding(pool: &SqlitePool, device: &Device) -> AppResult<Binding> {
     Ok(Binding {

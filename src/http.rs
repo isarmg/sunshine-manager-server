@@ -623,9 +623,22 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, application).await.unwrap() });
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
-        for (forwarded, expected) in [
-            (Some("https"), StatusCode::UNAUTHORIZED),
-            (None, StatusCode::FORBIDDEN),
+        let unknown_credential = format!("Bearer {}", "a".repeat(64));
+        for (authorization, forwarded, expected, terminal) in [
+            (None, Some("https"), StatusCode::UNAUTHORIZED, false),
+            (
+                Some("Bearer malformed"),
+                Some("https"),
+                StatusCode::UNAUTHORIZED,
+                false,
+            ),
+            (
+                Some(unknown_credential.as_str()),
+                Some("https"),
+                StatusCode::UNAUTHORIZED,
+                true,
+            ),
+            (None, None, StatusCode::FORBIDDEN, false),
         ] {
             let mut request = client
                 .get(format!("http://{address}/sunshine-client/v2/connect"))
@@ -637,15 +650,22 @@ mod tests {
             if let Some(value) = forwarded {
                 request = request.header("x-forwarded-proto", value);
             }
+            if let Some(value) = authorization {
+                request = request.header(header::AUTHORIZATION, value);
+            }
             let response = request.send().await.unwrap();
             assert_eq!(response.status(), expected);
-            if expected == StatusCode::UNAUTHORIZED {
+            assert_eq!(
+                response.headers().contains_key("x-sarmg-error-code"),
+                terminal
+            );
+            if terminal {
                 assert_eq!(response.headers()["x-sarmg-error-code"], "unauthorized");
+            }
+            if expected == StatusCode::UNAUTHORIZED {
                 let bytes = response.bytes().await.unwrap();
                 let envelope: ErrorEnvelope = serde_json::from_slice(&bytes).unwrap();
                 assert_eq!(envelope.code.as_str(), "unauthorized");
-            } else {
-                assert!(!response.headers().contains_key("x-sarmg-error-code"));
             }
         }
         server.abort();

@@ -14,6 +14,8 @@ pub enum AppError {
     BadRequest(String),
     #[error("unauthorized")]
     Unauthorized,
+    #[error("device credential rejected")]
+    DeviceCredentialRejected,
     #[error("{0}")]
     Forbidden(String),
     #[error("{0}")]
@@ -36,7 +38,7 @@ impl AppError {
     fn status(&self) -> StatusCode {
         match self {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
-            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Unauthorized | Self::DeviceCredentialRejected => StatusCode::UNAUTHORIZED,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
@@ -50,7 +52,7 @@ impl AppError {
     fn code(&self) -> &'static str {
         match self {
             Self::BadRequest(_) => "bad_request",
-            Self::Unauthorized => "unauthorized",
+            Self::Unauthorized | Self::DeviceCredentialRejected => "unauthorized",
             Self::Forbidden(_) => "forbidden",
             Self::NotFound(_) => "not_found",
             Self::Conflict(_) => "conflict",
@@ -98,7 +100,7 @@ impl IntoResponse for AppError {
             Self::TooManyRequests { retry_after } => {
                 format!("too many login attempts; retry after {retry_after} seconds")
             }
-            Self::Unauthorized => "unauthorized".to_string(),
+            Self::Unauthorized | Self::DeviceCredentialRejected => "unauthorized".to_string(),
             Self::Database(_) => "database unavailable".to_string(),
             Self::Crypto | Self::Internal(_) => "internal error".to_string(),
         };
@@ -107,9 +109,9 @@ impl IntoResponse for AppError {
         }
         let envelope = ErrorEnvelope::with_code(code, message).retryable(retryable);
         let mut response = (status, Json(envelope)).into_response();
-        if matches!(self, Self::Unauthorized) {
-            // The Client treats only this Manager-authored marker as terminal
-            // during a WebSocket handshake. A proxy's unrelated 401 is retryable.
+        if matches!(self, Self::DeviceCredentialRejected) {
+            // Only a database-confirmed invalid device credential is terminal.
+            // A missing or malformed Authorization header can be caused by a proxy.
             response.headers_mut().insert(
                 "x-sarmg-error-code",
                 HeaderValue::from_static("unauthorized"),
@@ -138,8 +140,8 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn unauthorized_response_marks_the_manager_credential_contract() {
-        let response = AppError::Unauthorized.into_response();
+    async fn rejected_device_credential_marks_the_manager_credential_contract() {
+        let response = AppError::DeviceCredentialRejected.into_response();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(response.headers()["x-sarmg-error-code"], "unauthorized");
         assert_eq!(
@@ -150,6 +152,14 @@ mod tests {
         let envelope: ErrorEnvelope = serde_json::from_slice(&body).unwrap();
         assert_eq!(envelope.code.as_str(), "unauthorized");
         assert!(!envelope.retryable);
+
+        let missing_authorization = AppError::Unauthorized.into_response();
+        assert_eq!(missing_authorization.status(), StatusCode::UNAUTHORIZED);
+        assert!(
+            !missing_authorization
+                .headers()
+                .contains_key("x-sarmg-error-code")
+        );
 
         let forbidden = AppError::Forbidden("ingress unavailable".into()).into_response();
         assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
