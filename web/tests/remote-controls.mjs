@@ -20,7 +20,7 @@ const server=await preview({preview:{host:"127.0.0.1",port:0,strictPort:true}});
 try {for(const engine of [chromium,firefox]){
  const browser=await engine.launch();
  try {
-  const context=await browser.newContext({ locale: "zh-CN", timezoneId:"America/Los_Angeles", hasTouch:true });const page=await context.newPage();const commands=[];const errors=[];const operations=[];const logDates=[];const serverToday="2030-01-02",serverYesterday="2030-01-01",serverStart=Date.parse("2030-01-02T00:00:00Z")*1000,serverEnd=Date.parse("2030-01-03T00:00:00Z")*1000;let operationClock=0;let emptyApplications=false,holdInitialSummary=true,releaseInitialSummary=null,holdNextCalendar=false,releaseCalendar=null,largeLogPayloadOnce=false,failNextLog=false,externalBlocking=0,fullLogRequests=0,summaryResponses=0,failSummaryOnce=false,failedSummaryResponses=0;
+  const context=await browser.newContext({ locale: "zh-CN", timezoneId:"America/Los_Angeles", hasTouch:true });const page=await context.newPage();const commands=[];const errors=[];const operations=[];const logDates=[];const serverToday="2030-01-02",serverYesterday="2030-01-01",serverStart=Date.parse("2030-01-02T00:00:00Z")*1000,serverEnd=Date.parse("2030-01-03T00:00:00Z")*1000;let operationClock=0;let emptyApplications=false,holdInitialSummary=true,releaseInitialSummary=null,holdNextCalendar=false,releaseCalendar=null,failCalendarOnce=false,largeLogPayloadOnce=false,failNextLog=false,externalBlocking=0,fullLogRequests=0,summaryResponses=0,failSummaryOnce=false,failedSummaryResponses=0;
   const serverTimestamp=micros=>new Date(Math.floor(micros/1000)).toISOString().slice(0,19).replace("T"," ")+"."+String(micros%1_000_000).padStart(6,"0")+" +00:00";
   page.on("pageerror",e=>errors.push(e.message));
   const app={reference:{fingerprint:"c".repeat(64)},specification:{name:"Steam",output:"",cmd:"","working-dir":"","exclude-global-prep-cmd":false,elevated:false,"auto-detach":false,"wait-all":false,"exit-timeout":5,"prep-cmd":[],detached:[],"image-path":""}};
@@ -32,6 +32,7 @@ try {for(const engine of [chromium,firefox]){
    if(path.endsWith("/authorization"))return route.fulfill({json:{manager_id:randomUUID(),device_id:device.id,authorization_code:"b".repeat(36)}});
    if(path.endsWith("/tasks/calendar")){
     if(holdNextCalendar){await new Promise(resolve=>{releaseCalendar=resolve});holdNextCalendar=false}
+    if(failCalendarOnce){failCalendarOnce=false;return route.fulfill({status:503,json:{code:"database_unavailable",message:"try again",retryable:true}})}
     return route.fulfill({json:{today:serverToday}});
    }
    if(path.endsWith("/tasks/summary")){
@@ -306,6 +307,15 @@ try {for(const engine of [chromium,firefox]){
   await expect(logSection.getByText("暂无日志",{exact:true})).toHaveCount(0);
   await logSection.getByRole("button",{name:"刷新日志",exact:true}).click();
   await expect(logSection.locator("article")).toHaveCount(operations.length-1);
+  failCalendarOnce=true;
+  await page.getByRole("button",{name:"详细信息",exact:true}).click();
+  await page.getByRole("button",{name:"日志",exact:true}).click();
+  await expect(page.getByText("无法读取服务器当天日期",{exact:true})).toBeVisible();
+  const beforeManualDate=fullLogRequests;
+  await logSection.getByLabel("日志日期（服务器时区）",{exact:true}).fill(serverToday);
+  await expect.poll(()=>fullLogRequests).toBeGreaterThan(beforeManualDate);
+  await expect(logSection.locator("article")).toHaveCount(operations.length-1);
+  await expect(page.getByText("无法读取服务器当天日期",{exact:true})).toHaveCount(0);
   for(const operation of operations)if(operation.state==="unknown")operation.state="resolved";
   externalBlocking=1;
   const beforeSummary=summaryResponses;
