@@ -1,6 +1,6 @@
 # Sunshine Manager Server 当前功能与取舍清单
 
-本文描述 `0.11.10` 与协议 `sunshine-management/2`。Server、Client 和协议只支持官方 Sunshine
+本文描述 `0.11.11` 与协议 `sunshine-management/2`。Server、Client 和协议只支持官方 Sunshine
 `v2026.914.233613`，不注册旧协议、旧版本或旧状态的回退分支。
 
 ## 拓扑与所有权
@@ -24,6 +24,7 @@ Manager。
 | 应用 | 列表、新建、编辑、删除、关闭当前应用、PNG 封面 | 使用列表修订和内容引用映射即时索引；命令字段只能通过专用应用结构提交，不存在通用 Shell |
 | Moonlight | 提交 PIN、列出客户端、启用/禁用、单个或全部取消配对 | 与 Manager–Client 注册完全分离；禁用和取消配对会影响活动会话 |
 | 日志与诊断 | Sunshine 日志按字节游标分页、客户端脱敏；读取 API、认证、版本、平台、配置修订和服务状态 | 单页上限 24 KiB；管理操作记录与 Sunshine 日志分开显示 |
+| Manager 操作日志 | 按服务器本地日期一次读取当前管理员在所选日的全部操作和结果；默认当天，显示 UTC 偏移 | 单次 Web 响应受 64 MiB / 120 秒预算约束；实例阻塞任务总数包含其他管理员，但不披露其操作内容 |
 | 显示与输入 | 重置显示设备持久状态、重置 Portal token、读取 VirtualHID/ViGEmBus 状态 | 使用固定上游端点，不接收路径、驱动安装命令或任意 HTTP |
 | 服务 | 读取状态并启动、停止、重启 | Windows 固定 `SunshineService`，Linux 固定 systemd `sunshine.service`；macOS 未声明固定服务能力 |
 

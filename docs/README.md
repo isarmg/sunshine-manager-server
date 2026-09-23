@@ -1,6 +1,6 @@
 # Sunshine Manager 文档总览
 
-本文档只描述 `0.11.10` 当前代码；`schema/generated/current_schema.sql`、`release.json`、Rust 合约与测试是
+本文档只描述 `0.11.11` 当前代码；`schema/generated/current_schema.sql`、`release.json`、Rust 合约与测试是
 机器可执行事实源。
 
 | 分类 | 文档 | 内容 |
@@ -10,3 +10,4 @@
 | 完整功能与取舍 | [feature-inventory-and-tradeoffs.md](feature-inventory-and-tradeoffs.md) | 功能边界、风险和架构选择 |
 | 必要 README | [../README.md](../README.md) | 定位、快速验证和导航 |
 | 运维 | [operations.md](operations.md) | 不可变部署、环境配置、doctor、故障与安全事件 |
+| 当前发行说明 | [releases/0.11.11.md](releases/0.11.11.md) | 本版本功能和验证范围 |
