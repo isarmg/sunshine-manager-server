@@ -1,20 +1,22 @@
 import assert from "node:assert/strict";
 import {chromium,firefox,expect} from "@playwright/test";
 import {preview} from "vite";
+import AxeBuilder from "@axe-core/playwright";
 import {randomUUID} from "node:crypto";
 const session={authenticated:true,user_id:"A".repeat(43),username:"admin",role:"admin",csrf_token:"A".repeat(43)};
 const configFields=[
  {key:"sunshine_name",kind:"text",maximum_length:32,requires_restart:true,supported_sunshine_versions:["2026.914.233613"],operating_systems:["linux_x86_64"]},
  {key:"qp",kind:"integer",minimum:0,maximum:51,requires_restart:true,supported_sunshine_versions:["2026.914.233613"],operating_systems:["linux_x86_64"]},
 ];
+configFields.push({key:"nvenc_preset",kind:"integer",minimum:1,maximum:7,requires_restart:true,supported_sunshine_versions:["2026.914.233613"],operating_systems:["linux_x86_64"]});
 const server=await preview({preview:{host:"127.0.0.1",port:0,strictPort:true}});
 try {for(const engine of [chromium,firefox]){
  const browser=await engine.launch();
  try {
-  const page=await browser.newPage({ locale: "zh-CN" });const commands=[];const errors=[];const operations=[];
+  const context=await browser.newContext({ locale: "zh-CN" });const page=await context.newPage();const commands=[];const errors=[];const operations=[];
   page.on("pageerror",e=>errors.push(e.message));
   const app={reference:{fingerprint:"c".repeat(64)},specification:{name:"Steam",output:"",cmd:"","working-dir":"","exclude-global-prep-cmd":false,elevated:false,"auto-detach":false,"wait-all":false,"exit-timeout":5,"prep-cmd":[],detached:[],"image-path":""}};
-  const device={id:randomUUID(),name:"游戏主机",registered:true,pairing_pending:false,revoked:false,client_online:true,sunshine_reachable:true,configuration_state:"pending_verification",last_seen_at_micros:Date.now()*1000,capabilities:{protocol:"sunshine-management/2",client_version:"0.2.0",os:"linux_x86_64",sunshine_version:"2026.914.233613",restart_allowed:true,managed_fields:["sunshine_name","qp"],application_management:true,application_host_commands_allowed:true,moonlight_pairing_management:true,diagnostics:true,maintenance:true,service_control:true},snapshot:{revision:"a".repeat(64),sunshine_version:"2026.914.233613",fields:{sunshine_name:"Original",qp:"28"},effectiveness:"pending_verification"}};
+  const device={id:randomUUID(),name:"游戏主机",registered:true,pairing_pending:false,revoked:false,client_online:true,sunshine_reachable:true,configuration_state:"pending_verification",last_seen_at_micros:Date.now()*1000,capabilities:{protocol:"sunshine-management/2",client_version:"0.2.0",os:"linux_x86_64",sunshine_version:"2026.914.233613",restart_allowed:true,managed_fields:configFields.map(field=>field.key),application_management:true,application_host_commands_allowed:true,moonlight_pairing_management:true,diagnostics:true,maintenance:true,service_control:true},snapshot:{revision:"a".repeat(64),sunshine_version:"2026.914.233613",fields:{sunshine_name:"Original",qp:"28",nvenc_preset:"1"},effectiveness:"pending_verification"}};
   await page.route("**/api/v2/**",async route=>{
    const req=route.request();const path=new URL(req.url()).pathname;
    if(path.endsWith("/sunshine/config-fields"))return route.fulfill({json:configFields});
@@ -35,14 +37,41 @@ try {for(const engine of [chromium,firefox]){
   await page.goto("http://127.0.0.1:"+server.httpServer.address().port);
   await page.getByRole("link",{name:"选择实例 游戏主机",exact:true}).click();
   await expect(page.getByRole("button",{name:"详细信息",exact:true})).toHaveAttribute("aria-pressed","true");
+  const categories=page.getByRole("navigation",{name:"Sunshine 配置分类"});
+  await expect(categories.getByRole("button",{name:"概况",exact:true})).toHaveAttribute("aria-pressed","true");
+  await expect(page.getByLabel("量化参数 QP",{exact:true})).toBeHidden();
+  await expect(categories.getByRole("button",{name:"NVIDIA NVENC 编码器",exact:true})).toBeVisible();
+  await expect(categories.getByRole("button",{name:"Intel Quick Sync 编码器",exact:true})).toHaveCount(0);
   await page.getByLabel("Sunshine 名称", { exact: true }).fill("New name");
+  await categories.getByRole("button",{name:"高级",exact:true}).click();
+  await expect(page.getByLabel("Sunshine 名称",{exact:true})).toBeHidden();
+  await page.getByLabel("量化参数 QP",{exact:true}).fill("99");
+  await categories.getByRole("button",{name:"概况",exact:true}).click();
+  await page.getByRole("button",{name:"预览变更",exact:true}).click();
+  await expect(categories.getByRole("button",{name:"高级",exact:true})).toHaveAttribute("aria-pressed","true");
+  await expect(page.getByLabel("量化参数 QP",{exact:true})).toBeFocused();
+  await expect(page.getByRole("region",{name:"变更差异预览"})).toHaveCount(0);
+  await page.getByLabel("量化参数 QP",{exact:true}).fill("24");
+  await categories.getByRole("button",{name:"NVIDIA NVENC 编码器",exact:true}).click();
+  await page.getByRole("region",{name:"NVIDIA NVENC 编码器",exact:true}).getByRole("checkbox").check();
+  await categories.getByRole("button",{name:"输入",exact:true}).click();
+  await expect(page.getByRole("region",{name:"输入",exact:true})).toContainText("当前设备没有可远程修改的此类配置。");
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  const rows=await categories.getByRole("button").evaluateAll(elements=>elements.map(element=>element.getBoundingClientRect().top));
+  assert.ok(rows.every(top=>Math.abs(top-rows[0])<1));
+  await categories.getByRole("button",{name:"概况",exact:true}).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Sunshine 名称",{exact:true})).toHaveValue("New name");
+  assert.deepEqual((await new AxeBuilder({page}).include('section[aria-label="配置设置"]').withTags(["wcag2a","wcag2aa","wcag21aa"]).analyze()).violations,[]);
+  await page.setViewportSize({width:1280,height:900});
   await page.getByRole("button",{name:"预览变更",exact:true}).click();
   await expect(page.getByRole("region",{name:"变更差异预览"})).toContainText("Original");
   await expect(page.getByRole("region",{name:"变更差异预览"})).toContainText("New name");
   assert.equal(commands.length,0);
   await page.getByRole("button",{name:"确认保存配置",exact:true}).click();
   await expect.poll(()=>commands.length).toBe(1);
-  assert.deepEqual(commands[0],{kind:"patch_config",expected_revision:"a".repeat(64),set:{sunshine_name:"New name"},remove:[],restart_policy:"manual"});
+  assert.deepEqual(commands[0],{kind:"patch_config",expected_revision:"a".repeat(64),set:{sunshine_name:"New name",qp:24},remove:["nvenc_preset"],restart_policy:"manual"});
   await page.getByRole("button",{name:"重启 Sunshine",exact:true}).click();
   const dialog=page.getByRole("dialog",{name:"确认重启 Sunshine"});
   await expect(dialog).toContainText("中断正在进行的串流");assert.equal(commands.length,1);

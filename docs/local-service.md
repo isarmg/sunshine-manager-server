@@ -13,6 +13,8 @@ node scripts/local-service.mjs stop
 
 浏览器访问 `http://127.0.0.1:18104`。管理员为 `admin`；首次启动随机生成密码，保存于权限为 0600 的 `.runtime/local-service/login.txt`，不写日志或 Git。独立数据库及密钥保留在忽略目录 `.runtime/local-service/`，重启使用同一份状态。不要删除或替换现有密钥文件。
 
+修改前端时，保持后端运行，在另一个终端执行 `npm run dev --prefix web`，访问 `http://127.0.0.1:5173`。开发服务支持热更新，将 `/api` 请求代理到 18104，并保留浏览器 Host 以通过登录和 CSRF 同源检查。使用同一份管理员账号密码；按 Ctrl+C 停止前端开发服务。
+
 只在回环监听下使用产品已有的开发 HTTP Session 模式。停止命令验证记录的进程启动时间和二进制路径，只向匹配的本地服务发送 SIGTERM；不强制杀死其他占用端口的进程。
 
 当前管理 Web 的默认字体来自 Server Foundation 维护的 `web/fonts/` 摘要快照：英文为 Maple Mono Normal NL 正体（非斜体、非手写、无连字），中日文为 Maple Mono NL CN 正体。字体分片按需由本地服务提供，不依赖访问者安装字体或外部 CDN。

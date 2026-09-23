@@ -2,11 +2,49 @@ import { t } from "@sarmg/admin-ui/i18n";
 import type { ConfigFieldDefinition, DeviceInfo } from "./api";
 
 export type ConfigField = ConfigFieldDefinition & {
+  category: ConfigCategory;
   label: string;
   inputKind: "text" | "integer" | "select";
   boolean: boolean;
   options: string[];
 };
+
+export const configCategories = [
+  {id: "general", label: t("概况", "General")},
+  {id: "input", label: t("输入", "Input")},
+  {id: "audio-video", label: t("音频/视频", "Audio/Video")},
+  {id: "network", label: t("网络", "Network")},
+  {id: "files", label: t("配置文件", "Config files")},
+  {id: "advanced", label: t("高级", "Advanced")},
+  {id: "nvenc", label: t("NVIDIA NVENC 编码器", "NVIDIA NVENC encoder"), encoder: true},
+  {id: "qsv", label: t("Intel Quick Sync 编码器", "Intel Quick Sync encoder"), encoder: true},
+  {id: "amd", label: t("AMD AMF 编码器", "AMD AMF encoder"), encoder: true},
+  {id: "vaapi", label: t("VA-API 编码器", "VA-API encoder"), encoder: true},
+  {id: "vt", label: t("VideoToolbox 编码器", "VideoToolbox encoder"), encoder: true},
+  {id: "software", label: t("软件编码器", "Software encoder"), encoder: true},
+] as const;
+export type ConfigCategory = typeof configCategories[number]["id"];
+
+const categoryKeys: Partial<Record<ConfigCategory, readonly string[]>> = {
+  general: ["sunshine_name", "locale", "notify_pre_releases", "system_tray"],
+  input: ["controller", "keyboard", "mouse", "always_send_scancodes", "key_rightalt_to_key_win", "high_resolution_scrolling", "native_pen_touch", "back_button_timeout", "key_repeat_delay", "gamepad_driver", "gamepad", "ds4_back_as_touchpad_click", "motion_as_ds4", "touchpad_as_ds4", "virtualhid_randomize_mac"],
+  "audio-video": ["encoder", "stream_audio"],
+  network: ["fec_percentage", "max_bitrate"],
+  files: ["min_log_level"],
+  software: ["min_threads"],
+};
+
+function categoryForField(key: string): ConfigCategory {
+  for (const category of configCategories) {
+    if (categoryKeys[category.id]?.includes(key)) return category.id;
+  }
+  if (key.startsWith("dd_")) return "audio-video";
+  if (key.startsWith("sw_")) return "software";
+  for (const prefix of ["nvenc", "qsv", "amd", "vaapi", "vt"] as const) {
+    if (key.startsWith(`${prefix}_`)) return prefix;
+  }
+  return "advanced";
+}
 
 const labels: Record<string, string> = {
   sunshine_name: t("Sunshine 名称", "Sunshine name"),
@@ -51,6 +89,7 @@ export function fieldsForDevice(
       && field.operating_systems.includes(capabilities.os))
     .map((field) => ({
       ...field,
+      category: categoryForField(field.key),
       label: labels[field.key] ?? field.key,
       inputKind: field.kind === "integer" ? "integer" : field.kind === "text" ? "text" : "select",
       boolean: field.kind === "boolean",

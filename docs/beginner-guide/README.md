@@ -1,4 +1,4 @@
-# Sunshine Manager 0.11.7 初学者指南
+# Sunshine Manager 0.11.8 初学者指南
 
 本指南描述当前 Server + 独立 Client 架构。先理解实例和 WSS 通道，再理解配置任务与不确定性：
 
