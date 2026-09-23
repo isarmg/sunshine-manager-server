@@ -13,7 +13,7 @@ const server=await preview({preview:{host:"127.0.0.1",port:0,strictPort:true}});
 try {for(const engine of [chromium,firefox]){
  const browser=await engine.launch();
  try {
-  const context=await browser.newContext({ locale: "zh-CN" });const page=await context.newPage();const commands=[];const errors=[];const operations=[];
+  const context=await browser.newContext({ locale: "zh-CN" });const page=await context.newPage();const commands=[];const errors=[];const operations=[];let emptyApplications=false;
   page.on("pageerror",e=>errors.push(e.message));
   const app={reference:{fingerprint:"c".repeat(64)},specification:{name:"Steam",output:"",cmd:"","working-dir":"","exclude-global-prep-cmd":false,elevated:false,"auto-detach":false,"wait-all":false,"exit-timeout":5,"prep-cmd":[],detached:[],"image-path":""}};
   const device={id:randomUUID(),name:"游戏主机",registered:true,pairing_pending:false,revoked:false,client_online:true,sunshine_reachable:true,configuration_state:"pending_verification",last_seen_at_micros:Date.now()*1000,capabilities:{protocol:"sunshine-management/2",client_version:"0.2.0",os:"linux_x86_64",sunshine_version:"2026.914.233613",restart_allowed:true,managed_fields:configFields.map(field=>field.key),application_management:true,application_host_commands_allowed:true,moonlight_pairing_management:true,diagnostics:true,maintenance:true,service_control:true},snapshot:{revision:"a".repeat(64),sunshine_version:"2026.914.233613",fields:{sunshine_name:"Original",qp:"28",nvenc_preset:"1"},effectiveness:"pending_verification"}};
@@ -28,7 +28,7 @@ try {for(const engine of [chromium,firefox]){
      assert.equal(req.headers()["x-csrf-token"],session.csrf_token);assert.ok(req.headers()["idempotency-key"]);
      const action={read_config:"sunshine.config.read",patch_config:"sunshine.config.patch",restart:"sunshine.restart",list_applications:"sunshine.applications.list",save_application:"sunshine.applications.save",list_paired_clients:"sunshine.pairing.clients.list",read_logs:"sunshine.logs.read",read_diagnostics:"sunshine.diagnostics.read",read_virtual_input_status:"sunshine.virtual_input.read",read_service_status:"sunshine.service.read"}[command.kind]??`sunshine.${command.kind}`;
      const snapshot={...device.snapshot,effectiveness:command.kind==="patch_config"?"awaiting_restart":"pending_verification"};
-     const result=command.kind==="restart"?{kind:"restart_acknowledged",snapshot}:command.kind==="read_config"?{kind:"config_read",snapshot}:command.kind==="patch_config"?{kind:"config_saved",snapshot}:command.kind==="list_applications"?{kind:"applications_read",snapshot:{revision:"d".repeat(64),applications:[app]}}:command.kind==="save_application"?{kind:"application_saved",snapshot:{revision:"e".repeat(64),applications:[{reference:{fingerprint:"f".repeat(64)},specification:command.application}]}}:command.kind==="list_paired_clients"?{kind:"paired_clients_read",snapshot:{revision:"1".repeat(64),clients:[{uuid:"123e4567-e89b-12d3-a456-426614174000",name:"Moonlight TV",enabled:true}]}}:command.kind==="read_logs"?{kind:"logs_read",page:{revision:"2".repeat(64),text:"Sunshine ready\n",start_offset:0,end_offset:15,total_bytes:15,previous:null,redacted:false}}:command.kind==="read_diagnostics"?{kind:"diagnostics_read",snapshot:{sunshine_version:"2026.914.233613",platform:"linux",api_reachable:true,authentication_accepted:true,service_state:"running",configuration_revision:"a".repeat(64)}}:command.kind==="read_virtual_input_status"?{kind:"virtual_input_status_read",status:{virtualhid:{installed:false,version:null,required_version:null,error:null},vigembus:{installed:false,version:null,required_version:null,error:null}}}:command.kind==="read_service_status"?{kind:"service_status_read",state:"running"}:{kind:"maintenance_completed",action:command.action};
+     const result=command.kind==="upload_cover"?{kind:"cover_uploaded",path:"covers/test.png"}:command.kind==="control_service"?{kind:"service_controlled",action:command.action,state:"stopped"}:command.kind==="restart"?{kind:"restart_acknowledged",snapshot}:command.kind==="read_config"?{kind:"config_read",snapshot}:command.kind==="patch_config"?{kind:"config_saved",snapshot}:command.kind==="list_applications"?{kind:"applications_read",snapshot:{revision:"d".repeat(64),applications:emptyApplications?[]:[app]}}:command.kind==="save_application"?{kind:"application_saved",snapshot:{revision:"e".repeat(64),applications:[{reference:{fingerprint:"f".repeat(64)},specification:command.application}]}}:command.kind==="list_paired_clients"?{kind:"paired_clients_read",snapshot:{revision:"1".repeat(64),clients:[{uuid:"123e4567-e89b-12d3-a456-426614174000",name:"Moonlight TV",enabled:true}]}}:command.kind==="read_logs"?{kind:"logs_read",page:{revision:"2".repeat(64),text:"Sunshine ready\n",start_offset:0,end_offset:15,total_bytes:15,previous:null,redacted:false}}:command.kind==="read_diagnostics"?{kind:"diagnostics_read",snapshot:{sunshine_version:"2026.914.233613",platform:"linux",api_reachable:true,authentication_accepted:true,service_state:"running",configuration_revision:"a".repeat(64)}}:command.kind==="read_virtual_input_status"?{kind:"virtual_input_status_read",status:{virtualhid:{installed:false,version:null,required_version:null,error:null},vigembus:{installed:false,version:null,required_version:null,error:null}}}:command.kind==="read_service_status"?{kind:"service_status_read",state:"running"}:{kind:"maintenance_completed",action:command.action};
      const operation={operation_id:"op_"+randomUUID(),device_id:device.id,action,state:"succeeded",attempt:1,created_at_micros:Date.now()*1000,updated_at_micros:Date.now()*1000,result,reconciliation:null,resolution:null};
      operations.unshift(operation);return route.fulfill({json:operation});
     }return route.fulfill({json:operations});
@@ -95,6 +95,50 @@ try {for(const engine of [chromium,firefox]){
   await page.getByRole("button",{name:"刷新服务状态",exact:true}).click();
   await expect(page.locator("body")).toContainText("running");
   await expect(page.getByRole("button",{name:"重置显示设备",exact:true})).toBeVisible();
+  const service=page.getByRole("heading",{name:"Sunshine 服务",exact:true}).locator("..");
+  await service.getByRole("button",{name:"停止",exact:true}).click();
+  await page.getByRole("dialog").getByRole("button",{name:"确认",exact:true}).click();
+  await expect(service).toContainText("stopped");
+  await service.getByRole("button",{name:"刷新服务状态",exact:true}).click();
+  await expect(service).toContainText("running");
+  await expect(service).not.toContainText("stopped");
+
+  await page.getByRole("button",{name:"编辑",exact:true}).click();
+  const detached=page.getByLabel("分离命令（每行一条）",{exact:true});
+  await detached.fill("");
+  await detached.pressSequentially("printf hello");
+  await detached.press("Enter");
+  await detached.pressSequentially("printf world");
+  await expect(detached).toHaveValue("printf hello\nprintf world");
+  const beforeCommands=commands.length;
+  await page.getByRole("button",{name:"保存应用",exact:true}).click();
+  await page.getByRole("dialog",{name:"确认保存主机命令",exact:true}).getByRole("button",{name:"取消",exact:true}).click();
+  assert.equal(commands.length,beforeCommands);
+  await expect(detached).toHaveValue("printf hello\nprintf world");
+  await page.getByRole("button",{name:"保存应用",exact:true}).click();
+  await page.getByRole("dialog",{name:"确认保存主机命令",exact:true}).getByRole("button",{name:"确认",exact:true}).click();
+  await expect.poll(()=>commands.length).toBe(beforeCommands+1);
+  assert.deepEqual(commands.at(-1).application.detached,["printf hello","printf world"]);
+  await detached.fill(Array.from({length:17},(_,index)=>"command "+index).join("\n"));
+  await expect(page.getByRole("button",{name:"保存应用",exact:true})).toBeDisabled();
+  await expect(detached).toHaveValue(Array.from({length:17},(_,index)=>"command "+index).join("\n"));
+
+  const cover=page.locator('input[name="cover"]');
+  await page.getByLabel("封面键",{exact:true}).fill("test");
+  await cover.setInputFiles({name:"wrong.txt",mimeType:"text/plain",buffer:Buffer.from("invalid")});
+  await page.getByRole("button",{name:"上传 PNG",exact:true}).click();
+  assert.equal(await cover.evaluate(element=>element.validity.customError),true);
+  await cover.setInputFiles({name:"cover.png",mimeType:"image/png",buffer:Buffer.from([137,80,78,71])});
+  assert.equal(await cover.evaluate(element=>element.validity.customError),false);
+  await page.getByRole("button",{name:"上传 PNG",exact:true}).click();
+  await expect.poll(()=>commands.some(command=>command.kind==="upload_cover")).toBe(true);
+
+  emptyApplications=true;
+  await page.getByRole("button",{name:"刷新应用",exact:true}).click();
+  await expect(page.getByRole("button",{name:"编辑",exact:true})).toHaveCount(0);
+  await page.getByRole("button",{name:"新建应用",exact:true}).click();
+  await page.getByRole("button",{name:"取消",exact:true}).click();
+  await expect(page.getByRole("button",{name:"创建应用",exact:true})).toHaveCount(0);
   await page.getByRole("button",{name:"日志",exact:true}).click();
   await expect(page.locator("body")).toContainText("已确认重启请求");
   assert.deepEqual(errors,[]);console.log(engine.name()+": protocol v2 configuration, applications, pairing, logs, diagnostics and service controls passed");

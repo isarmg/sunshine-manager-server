@@ -30,7 +30,7 @@ export function DeviceInstances({ devices, select, removed }: { devices: DeviceI
     } catch (error) { setFailure({ requestId: errorRequestId(error) }); }
     finally { setPending(null); }
   }
-  if (!devices.length) return <EmptyState>{t("暂无实例，请新建并注册 客户端。", "No instances yet. Create an instance and register an client.")}</EmptyState>;
+  if (!devices.length) return <EmptyState>{t("暂无实例，请新建并注册 客户端。", "No instances yet. Create an instance and register a client.")}</EmptyState>;
   return <>{failure && <ErrorState requestId={failure.requestId}>{t("删除未能确认，请刷新实例列表核对。", "Deletion could not be confirmed. Refresh and check the instance list.")}</ErrorState>}<Table aria-label={t("Sunshine 实例列表", "Sunshine instance list")}><thead><tr>
     <th scope="col">{t("实例名称", "Instance name")}</th><th scope="col">{t("注册状态", "Registration status")}</th><th scope="col">{t("客户端 状态", "Client status")}</th>
     <th scope="col">{t("Sunshine 接口", "Sunshine API")}</th><th scope="col">{t("配置状态", "Configuration status")}</th><th scope="col">{t("操作系统/架构", "Operating system / architecture")}</th><th scope="col">{t("最近连接", "Last connection")}</th><th scope="col">{t("删除", "Delete")}</th>

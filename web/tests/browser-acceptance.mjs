@@ -30,6 +30,10 @@ try {
       devices.push(device);return route.fulfill({status:201,json:{device,manager_id:randomUUID(),token:"b".repeat(36)}});
      }return route.fulfill({json:devices});
     }
+    if(path.match(/\/sunshine\/devices\/[^/]+$/)&&req.method()==="PATCH"){
+     devices[0].name=req.postDataJSON().name;
+     return route.fulfill({json:devices[0]});
+    }
     if(path.endsWith("/pairing")&&req.method()==="DELETE"){
      devices[0].pairing_pending=false;
      return route.fulfill({status:204})
@@ -109,6 +113,16 @@ try {
    await expect.poll(()=>authorizationAttempts).toBeGreaterThan(1);
    await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(36));
    await expect(page.getByRole("alert")).toHaveCount(0);
+   const nameInput=page.getByRole("textbox",{name:"实例名称",exact:true});
+   await nameInput.fill("正在编辑的名称");
+   devices[0].name="另一浏览器保存的名称";
+   await page.getByRole("group",{name:"全局操作"}).getByRole("button",{name:"刷新",exact:true}).click();
+   await expect(pairingDetails.getByRole("heading",{name:devices[0].name,exact:true})).toBeVisible();
+   await expect(nameInput).toHaveValue("正在编辑的名称");
+   await nameInput.fill("新实例");
+   await page.getByRole("button",{name:"保存名称",exact:true}).click();
+   await expect.poll(()=>devices[0].name).toBe("新实例");
+   await expect(page.getByRole("button",{name:"保存名称",exact:true})).toBeDisabled();
    failNextTasks=true;
    await page.getByRole("group",{name:"全局操作"}).getByRole("button",{name:"刷新",exact:true}).click();
    await expect(page.getByRole("alert")).toContainText("tasks-failure-123");
@@ -125,6 +139,10 @@ try {
    const detailActions=page.getByRole("button",{name:"删除实例",exact:true}).locator("..");
    await detailActions.evaluate(element=>element.click());
    await expect(page.getByRole("dialog")).toHaveCount(0);
+   await page.getByRole("button",{name:"取消配对",exact:true}).click();
+   await page.getByRole("dialog").getByRole("button",{name:"取消",exact:true}).click();
+   assert.equal(devices[0].pairing_pending,true);
+   await expect(page.getByText("等待配对",{exact:true})).toBeVisible();
    await page.getByRole("button",{name:"取消配对",exact:true}).click();await page.getByRole("button",{name:"确认",exact:true}).click();
    await expect(page.getByText("配对已取消",{exact:true})).toBeVisible();
    await expect(page.locator(".sunshine-workspace .sunshine-token").first()).toHaveText("b".repeat(36));
