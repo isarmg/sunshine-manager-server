@@ -3,7 +3,7 @@
 ## 1. 生产布局
 
 ```text
-/opt/isarmg/sunshine-manager/releases/0.11.9/  root-owned read-only release
+/opt/isarmg/sunshine-manager/releases/0.11.10/  root-owned read-only release
 /etc/isarmg/sunshine-manager.env             0600 environment
 /var/lib/isarmg/sunshine-manager/db/sunshine-manager.sqlite3  SQLite
 /run/isarmg/sunshine-manager/                locks/runtime
@@ -12,8 +12,8 @@
 systemd 使用 `isarmg-sunshine`，直接执行：
 
 ```text
-/opt/isarmg/sunshine-manager/releases/0.11.9/bin/sunshine-manager \
-  serve-release --root /opt/isarmg/sunshine-manager/releases/0.11.9
+/opt/isarmg/sunshine-manager/releases/0.11.10/bin/sunshine-manager \
+  serve-release --root /opt/isarmg/sunshine-manager/releases/0.11.10
 ```
 
 发行树无 `current` 链接，不依赖工作目录，必须拒绝 symlink、特殊文件、hardlink asset、服务账户拥有的
@@ -21,7 +21,7 @@ asset 和 group/world writable 内容。
 
 ## 2. 构建与安装发行物
 
-从干净且 annotated `v0.11.9` 精确指向 HEAD 的 checkout：
+从干净且 annotated `v0.11.10` 精确指向 HEAD 的 checkout：
 
 ```bash
 python3 scripts/package-release.py /absolute/release-output
@@ -37,10 +37,10 @@ Foundation 不是生产运行服务，发行树中不增加其 daemon、配置�
 输出已存在时拒绝覆盖。安装：
 
 ```bash
-tar -xzf sunshine-manager-0.11.9-x86_64-unknown-linux-gnu.tar.gz \
+tar -xzf sunshine-manager-0.11.10-x86_64-unknown-linux-gnu.tar.gz \
   -C /opt/isarmg/sunshine-manager/releases
-/opt/isarmg/sunshine-manager/releases/0.11.9/bin/sunshine-manager \
-  verify-release --root /opt/isarmg/sunshine-manager/releases/0.11.9
+/opt/isarmg/sunshine-manager/releases/0.11.10/bin/sunshine-manager \
+  verify-release --root /opt/isarmg/sunshine-manager/releases/0.11.10
 ```
 
 安装仓库内 systemd unit，创建专用账户、状态目录和 `/etc/isarmg/sunshine-manager.env`，再 enable/start。
@@ -68,7 +68,7 @@ Server 不保存 Sunshine 管理密码；该密码仅由 Client 在 Sunshine 主
 
 ```bash
 sunshine-manager identity
-sunshine-manager verify-release --root /opt/isarmg/sunshine-manager/releases/0.11.9
+sunshine-manager verify-release --root /opt/isarmg/sunshine-manager/releases/0.11.10
 sunshine-manager doctor
 sunshine-manager admin-create --database-url sqlite:///path/app.db
 printf '%s\n' '<new-secret>' | sunshine-manager admin-reset-password \
@@ -117,13 +117,13 @@ Client 主动连接 Server 的 WSS，无需在 Sunshine 主机开放额外入站
 LocalSystem 使用计算机信任存储。本机 Sunshine 必须使用 HTTPS 回环 IP 字面量；Client 不校验这条本机
 连接的证书身份，以支持默认无回环 IP SAN 的自签名证书。它不使用代理、不跟随重定向，也不接受非回环
 地址、URL 凭据、查询、片段或额外路径。详见
-[简化配对](https://github.com/isarmg/sunshine-manager-server/blob/v0.11.9/docs/simple-pairing.md)。
+[简化配对](https://github.com/isarmg/sunshine-manager-server/blob/v0.11.10/docs/simple-pairing.md)。
 
 ## 7. 当前连续性限制与外部升级边界
 
 Sunshine Manager 产品仓没有 backup、restore、Schema conversion、key rotation 或 re-encryption 命令。
 `sarmg-upgrade` 是这些能力的唯一所有者，其当前支持矩阵只声明 Sunshine 0.8.0 精确身份的 keyed
-backup/verify/restore，并未声明支持本仓当前 0.11.9。不能因依赖更新或构建通过推定备份可跨版本恢复；
+backup/verify/restore，并未声明支持本仓当前 0.11.10。不能因依赖更新或构建通过推定备份可跨版本恢复；
 在对应 adapter 和实际验收完成前，不对当前实例执行该工具的旧版本恢复流程。
 
 需要新环境时，创建全新当前数据库并重新登记实例；已有数据与秘密保持原样，等待明确支持当前身份的
