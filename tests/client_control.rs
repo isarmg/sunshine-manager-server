@@ -39,6 +39,49 @@ async fn device_list_returns_every_instance_in_case_insensitive_name_order() {
         .collect::<Vec<_>>();
     assert_eq!(names, ["alpha", "Bravo", "zulu"]);
 }
+
+#[tokio::test]
+async fn operation_history_uses_creation_time_then_id_instead_of_union_order() {
+    let (_dir, pool) = database().await;
+    let (id, _) = registered(&pool).await;
+    let ops = manager(&pool);
+    let mut ids = Vec::new();
+    for index in 0..3 {
+        ids.push(
+            ops.enqueue(
+                "admin",
+                &id,
+                &format!("history-{index}"),
+                Command::ReadConfig {},
+            )
+            .await
+            .unwrap()
+            .operation_id,
+        );
+    }
+    ids.sort();
+    let now = db::now_micros().unwrap();
+    for (operation_id, created) in [(&ids[0], now - 2_000_000), (&ids[1], now), (&ids[2], now)] {
+        sqlx::query(
+            "UPDATE _sarmg_operations SET created_at_micros=?,updated_at_micros=? \
+             WHERE operation_id=?",
+        )
+        .bind(created)
+        .bind(created)
+        .bind(operation_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let listed: Vec<String> = ops
+        .list_for_actor("admin", &id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|operation| operation.operation_id)
+        .collect();
+    assert_eq!(listed, vec![ids[2].clone(), ids[1].clone(), ids[0].clone()]);
+}
 async fn registered(pool: &sqlx::SqlitePool) -> (String, String) {
     let ticket = db::create_device(pool, &secrets(), "测试设备", "admin")
         .await

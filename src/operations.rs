@@ -318,7 +318,24 @@ impl OperationManager {
         self.view(stored).await
     }
     pub async fn list_for_actor(&self, actor: &str, device: &str) -> AppResult<Vec<OperationView>> {
-        let ids:Vec<String>=sqlx::query_scalar("SELECT operation_id FROM _sarmg_operations WHERE target_key=? AND json_extract(CAST(request_payload AS TEXT),'$.actor')=? AND state IN ('pending','running','unknown','dead_letter') UNION SELECT operation_id FROM (SELECT operation_id,created_at_micros FROM _sarmg_operations WHERE target_key=? AND json_extract(CAST(request_payload AS TEXT),'$.actor')=? ORDER BY created_at_micros DESC LIMIT 50) LIMIT 150").bind(device).bind(actor).bind(device).bind(actor).fetch_all(&self.pool).await?;
+        let ids: Vec<String> = sqlx::query_scalar(
+            "WITH selected AS (\
+             SELECT operation_id FROM _sarmg_operations WHERE target_key=? \
+             AND json_extract(CAST(request_payload AS TEXT),'$.actor')=? \
+             AND state IN ('pending','running','unknown','dead_letter') \
+             UNION \
+             SELECT operation_id FROM (SELECT operation_id FROM _sarmg_operations \
+             WHERE target_key=? AND json_extract(CAST(request_payload AS TEXT),'$.actor')=? \
+             ORDER BY created_at_micros DESC,operation_id DESC LIMIT 50)) \
+             SELECT operation_id FROM _sarmg_operations JOIN selected USING (operation_id) \
+             ORDER BY created_at_micros DESC,operation_id DESC LIMIT 150",
+        )
+        .bind(device)
+        .bind(actor)
+        .bind(device)
+        .bind(actor)
+        .fetch_all(&self.pool)
+        .await?;
         let mut views = Vec::new();
         for id in ids {
             views.push(self.get_for_actor(actor, &id).await?);
