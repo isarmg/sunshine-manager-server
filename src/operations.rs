@@ -50,6 +50,7 @@ pub struct OperationView {
     pub result: Option<Report>,
     pub reconciliation: Option<Report>,
     pub resolution: Option<String>,
+    pub status_reason: Option<&'static str>,
 }
 fn namespace(device_id: &str, installation_id: &Uuid, resource: &str) -> String {
     format!("sunshine.client.v2.{device_id}.{installation_id}.{resource}")
@@ -303,6 +304,12 @@ impl OperationManager {
                 .transpose()
                 .map_err(internal)?,
             resolution: stored.resolution_code,
+            // Foundation error codes may contain internal diagnostics. Expose
+            // only reasons with an explicit administrator-facing meaning.
+            status_reason: match stored.operation.error_code.as_deref() {
+                Some("authorization_rotated") => Some("authorization_rotated"),
+                _ => None,
+            },
         })
     }
     pub async fn get_for_actor(&self, actor: &str, id: &str) -> AppResult<OperationView> {

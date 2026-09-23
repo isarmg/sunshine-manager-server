@@ -308,6 +308,10 @@ async fn rotating_authorization_retires_old_tasks_before_the_same_installation_r
             .await
             .unwrap();
         assert_eq!(view.state, expected_state);
+        assert_eq!(view.status_reason, Some("authorization_rotated"));
+        let api_value = serde_json::to_value(&view).unwrap();
+        assert_eq!(api_value["status_reason"], "authorization_rotated");
+        assert!(api_value.get("error_code").is_none());
         let error: String =
             sqlx::query_scalar("SELECT error_code FROM _sarmg_operations WHERE operation_id=?")
                 .bind(&operation.operation_id)

@@ -194,8 +194,14 @@ try {for(const engine of [chromium,firefox]){
   await page.getByRole("button",{name:"确认保存配置",exact:true}).click();
   await expect.poll(()=>commands.at(-1)?.kind).toBe("patch_config");
   assert.deepEqual(commands.at(-1),{kind:"patch_config",expected_revision:"a".repeat(64),set:{},remove:["controller"],restart_policy:"manual"});
+  for(const state of ["failed","unknown"]){
+   operations.unshift({operation_id:"op_"+randomUUID(),device_id:device.id,action:"sunshine.restart",state,attempt:state==="unknown"?1:0,created_at_micros:Date.now()*1000,updated_at_micros:Date.now()*1000,result:null,reconciliation:null,resolution:null,status_reason:"authorization_rotated"});
+  }
   await page.getByRole("button",{name:"日志",exact:true}).click();
   await expect(page.locator("body")).toContainText("已确认重启请求");
+  await expect(page.getByText("状态原因：实例授权码已更换",{exact:true})).toHaveCount(2);
+  await expect(page.getByRole("button",{name:"确认已成功",exact:true})).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("authorization_rotated");
   assert.deepEqual(errors,[]);console.log(engine.name()+": protocol v2 configuration, applications, pairing, logs, diagnostics and service controls passed");
  }finally{await browser.close();}
 }}finally{await new Promise(done=>server.httpServer.close(done));}
