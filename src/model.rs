@@ -49,14 +49,14 @@ pub fn validate_instance_name(value: &str) -> AppResult<()> {
         || value.chars().any(char::is_control)
     {
         return Err(AppError::BadRequest(
-            "实例名称必须为 1–32 个字符，不能包含控制字符或首尾空格".into(),
+            "实例名称必须为 1–32 个字符，不能包含控制字符或首尾空白字符".into(),
         ));
     }
     Ok(())
 }
 
 #[cfg(test)]
-mod create_device_tests {
+mod tests {
     use super::*;
 
     #[test]
@@ -67,5 +67,14 @@ mod create_device_tests {
             serde_json::from_value::<CreateDeviceRequest>(serde_json::json!({"other": true}))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn instance_name_uses_unicode_scalar_length_and_rust_whitespace() {
+        let marker = '\u{feff}';
+        assert!(validate_instance_name(&format!("{marker}{}", "a".repeat(31))).is_ok());
+        assert!(validate_instance_name(&format!("{marker}{}", "a".repeat(32))).is_err());
+        assert!(validate_instance_name("\u{3000}name").is_err());
+        assert!(validate_instance_name("name\u{3000}").is_err());
     }
 }

@@ -185,6 +185,15 @@ try {for(const engine of [chromium,firefox]){
   await page.getByRole("button",{name:"新建应用",exact:true}).click();
   await page.getByRole("button",{name:"取消",exact:true}).click();
   await expect(page.getByRole("button",{name:"创建应用",exact:true})).toHaveCount(0);
+  await page.getByRole("button",{name:"使用最新配置（丢弃未提交编辑）",exact:true}).click();
+  await categories.getByRole("button",{name:"输入",exact:true}).click();
+  await controller.click();
+  await page.getByRole("option",{name:"未显式设置",exact:true}).click();
+  await page.getByRole("button",{name:"预览变更",exact:true}).click();
+  await expect(page.getByRole("region",{name:"变更差异预览"})).toContainText("控制器输入");
+  await page.getByRole("button",{name:"确认保存配置",exact:true}).click();
+  await expect.poll(()=>commands.at(-1)?.kind).toBe("patch_config");
+  assert.deepEqual(commands.at(-1),{kind:"patch_config",expected_revision:"a".repeat(64),set:{},remove:["controller"],restart_policy:"manual"});
   await page.getByRole("button",{name:"日志",exact:true}).click();
   await expect(page.locator("body")).toContainText("已确认重启请求");
   assert.deepEqual(errors,[]);console.log(engine.name()+": protocol v2 configuration, applications, pairing, logs, diagnostics and service controls passed");

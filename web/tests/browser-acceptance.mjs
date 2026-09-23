@@ -128,6 +128,18 @@ try {
    await expect(page.getByRole("alert")).toContainText("tasks-failure-123");
    await expect(page.locator("body")).not.toContainText("SECRET tasks");
    await expect(page.getByRole("alert")).toHaveCount(0,{timeout:5000});
+   await nameInput.fill("\uFEFF"+"a".repeat(32));
+   await expect(page.getByRole("alert")).toContainText("实例名称须为 1–32 个字符");
+   await expect(page.getByRole("button",{name:"保存名称",exact:true})).toBeDisabled();
+   assert.equal(devices[0].name,"新实例");
+   await nameInput.fill("\uFEFF新实例");
+   await expect(page.getByRole("alert")).toHaveCount(0);
+   await expect(page.getByRole("button",{name:"保存名称",exact:true})).toBeEnabled();
+   await page.getByRole("button",{name:"保存名称",exact:true}).click();
+   await expect.poll(()=>devices[0].name).toBe("\uFEFF新实例");
+   await nameInput.fill("新实例");
+   await page.getByRole("button",{name:"保存名称",exact:true}).click();
+   await expect.poll(()=>devices[0].name).toBe("新实例");
    for(const theme of ["dark","light"]){
     await page.getByRole("button",{name:theme==="dark"?"切换到深色模式":"切换到浅色模式",exact:true}).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme",theme);

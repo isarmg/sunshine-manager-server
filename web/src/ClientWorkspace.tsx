@@ -1,6 +1,5 @@
 import { operationLabel, configValueLabel } from "./display-labels";
 import { t } from "@sarmg/admin-ui/i18n";
-import { InstanceNameField } from "@sarmg/admin-shell";
 import {useEffect,useRef,useState,type FormEvent} from "react";
 import {Button,ConfirmDangerDialog,ErrorState,FormField,TextField} from "@sarmg/admin-ui";
 import {useAdminApplication,errorRequestId} from "@sarmg/admin-shell";
@@ -10,12 +9,18 @@ import {SunshineControls} from "./SunshineControls";
 import {ConfigSelect} from "./ConfigSelect";
 const states:Record<string,string>={unknown:t("尚未核对", "Not yet checked"),awaiting_restart:t("配置已保存，等待管理员重启", "Configuration saved; waiting for an administrator to restart"),pending_verification:t("配置已读取，运行时生效待验证", "Configuration read; runtime effect needs verification"),drift_detected:t("实际配置与已保存修订不同，请核对冲突", "Actual configuration differs from the saved revision; review the conflict")};
 const tasks:Record<string,string>={pending:t("排队中", "Queued"),running:t("执行中", "Running"),succeeded:t("执行已完成", "Execution completed"),failed:t("执行失败", "Execution failed"),unknown:t("结果不确定", "Outcome unknown"),resolved:t("已人工核对", "Manually reconciled"),dead_letter:t("执行已拒绝", "Execution rejected")};
+const instanceNameError=t("实例名称须为 1–32 个字符，不能包含控制字符或首尾空白。", "Use 1–32 characters without control characters or surrounding whitespace.");
+function validInstanceName(value:string):boolean{
+ const length=[...value].length;
+ return length>0&&length<=32&&!/^\p{White_Space}|\p{White_Space}$/u.test(value)&&!/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(value);
+}
 type WorkspaceFailure={message:string;requestId?:string};
 export function ClientWorkspace({device,fieldDefinitions,refreshSignal,changed,removed,ticket:initialTicket,page}:{device:DeviceInfo;fieldDefinitions:ConfigFieldDefinition[]|null;refreshSignal:number;changed():void;removed():void;ticket:Ticket|null;page:"details"|"logs"}){
  const{client,notify}=useAdminApplication();const[operations,setOperations]=useState<Operation[]>([]);
  const[authorization,setAuthorization]=useState<ClientAuthorization|null>(initialTicket?{manager_id:initialTicket.manager_id,device_id:initialTicket.device.id,authorization_code:initialTicket.token}:null);
  const[busy,setBusy]=useState(false);const[authorizationFailure,setAuthorizationFailure]=useState<WorkspaceFailure|null>(null);const[taskFailure,setTaskFailure]=useState<WorkspaceFailure|null>(null);const[actionFailure,setActionFailure]=useState<WorkspaceFailure|null>(null);const[confirm,setConfirm]=useState<{title:string;description:string;run():Promise<void>}|null>(null);
  const[name,setName]=useState(device.name);const persistedName=useRef(device.name);
+ const nameInvalid=!validInstanceName(name);
  const[baseline,setBaseline]=useState<Snapshot|null>(device.snapshot);const[draft,setDraft]=useState<Record<string,string>>(device.snapshot?.fields??{});const[remove,setRemove]=useState<string[]>([]);const[preview,setPreview]=useState<Command|null>(null);
  const idempotencyKeys=useRef(new Map<string,string>());const operationRevision=useRef(0);
  const[configCategory,setConfigCategory]=useState<ConfigCategory>("general");
@@ -40,8 +45,16 @@ export function ClientWorkspace({device,fieldDefinitions,refreshSignal,changed,r
  // Reveal invalid fields before native validation tries to focus a hidden category.
  const invalid=event.currentTarget.querySelector<HTMLInputElement|HTMLSelectElement>("input:invalid, select:invalid");
  if(invalid){const category=invalid.closest<HTMLElement>("[data-config-category]")?.dataset.configCategory as ConfigCategory|undefined;if(category)setConfigCategory(category);requestAnimationFrame(()=>invalid.reportValidity());return}
- const set:Record<string,string|number|boolean>={};for(const field of configFields){const value=draft[field.key]??"";if(!remove.includes(field.key)&&value!==""&&value!==baseline.fields[field.key]){set[field.key]=field.kind==="integer"?Number(value):field.boolean?value==="true":value}}
- const deleted=remove.filter(key=>key in baseline.fields);if(!Object.keys(set).length&&!deleted.length){notify(t("没有需要保存的变更", "No changes to save"));return}setPreview({kind:"patch_config",expected_revision:baseline.revision,set,remove:deleted,restart_policy:"manual"})}
+ const set:Record<string,string|number|boolean>={};const deleted:string[]=[];
+ for(const field of configFields){
+  const value=draft[field.key]??"";
+  if(remove.includes(field.key)||value===""){
+   if(field.key in baseline.fields)deleted.push(field.key);
+  }else if(value!==baseline.fields[field.key]){
+   set[field.key]=field.kind==="integer"?Number(value):field.boolean?value==="true":value;
+  }
+ }
+ if(!Object.keys(set).length&&!deleted.length){notify(t("没有需要保存的变更", "No changes to save"));return}setPreview({kind:"patch_config",expected_revision:baseline.revision,set,remove:deleted,restart_policy:"manual"})}
  function loadLatest(){if(device.snapshot){setBaseline(device.snapshot);setDraft(device.snapshot.fields);setRemove([]);setPreview(null)}}
  return <div className="sarmg-content-stack sunshine-workspace" aria-busy={busy}>
  {authorizationFailure&&<ErrorState requestId={authorizationFailure.requestId}>{authorizationFailure.message}</ErrorState>}
@@ -74,7 +87,7 @@ export function ClientWorkspace({device,fieldDefinitions,refreshSignal,changed,r
  <p>{states[device.configuration_state]}</p><Button disabled={blocked||!device.snapshot||!device.capabilities?.restart_allowed} onClick={()=>setConfirm({title:t("确认重启 Sunshine", "Confirm Sunshine restart"),description:t("重启可能中断正在进行的串流。必须由管理员明确授权；客户端 管理进程保持独立。重启后仍可能需要人工验证运行时生效。", "Restarting may interrupt an active stream and requires explicit administrator authorization. The client remains independent. Runtime effect may still need manual verification after restarting."),run:async()=>{if(device.snapshot)await submit({kind:"restart",expected_revision:device.snapshot.revision,administrator_confirmed:true})}})}>{t("重启 Sunshine", "Restart Sunshine")}</Button>{!device.capabilities?.restart_allowed&&<p>{t("客户端 本机尚未授权受控重启。", "Controlled restarts have not been authorized locally on the client.")}</p>}</section>}
  {page==="details"&&<SunshineControls device={device} operations={operations} busy={busy} blocked={blocked} submit={submit} confirm={setConfirm}/>}
  {page==="details"&&<>
- <section className="sarmg-content-panel" aria-label={t("实例设置", "Instance settings")}><h2>{t("实例设置", "Instance settings")}</h2><form onSubmit={event=>{event.preventDefault();void perform(async()=>{const updated=await client.request(base,isDevice,{method:"PATCH",body:JSON.stringify({name:name.trim()})});setName(updated.name);persistedName.current=updated.name;notify(t("实例名称已保存", "Instance name saved"))})}} aria-busy={busy}><FormField label={t("实例名称", "Instance name")}><InstanceNameField name="name" value={name} onChange={event=>setName(event.target.value)} required readOnly={busy}/></FormField><div className="sarmg-actions"><Button type="submit" disabled={busy||name.trim()===device.name}>{busy?t("正在保存…", "Saving…"):t("保存名称", "Save name")}</Button></div></form></section>
+ <section className="sarmg-content-panel" aria-label={t("实例设置", "Instance settings")}><h2>{t("实例设置", "Instance settings")}</h2><form onSubmit={event=>{event.preventDefault();if(nameInvalid)return;void perform(async()=>{const updated=await client.request(base,isDevice,{method:"PATCH",body:JSON.stringify({name})});setName(updated.name);persistedName.current=updated.name;notify(t("实例名称已保存", "Instance name saved"))})}} aria-busy={busy}><FormField label={t("实例名称", "Instance name")}><TextField name="name" value={name} onChange={event=>setName(event.target.value)} onInput={event=>event.currentTarget.setCustomValidity(validInstanceName(event.currentTarget.value)?"":instanceNameError)} aria-invalid={nameInvalid||undefined} aria-describedby={nameInvalid?"sunshine-instance-name-error":undefined} required readOnly={busy}/></FormField>{nameInvalid&&<p id="sunshine-instance-name-error" role="alert">{instanceNameError}</p>}<div className="sarmg-actions"><Button type="submit" disabled={busy||nameInvalid||name===device.name}>{busy?t("正在保存…", "Saving…"):t("保存名称", "Save name")}</Button></div></form></section>
  <section className="sarmg-content-panel" aria-label={t("实例操作", "Instance actions")}><h2>{t("实例操作", "Instance actions")}</h2><p>{t("这是该实例的长期授权码，服务端会加密保存并允许之后查看或更换；更换后客户端必须重新配对。", "This is the instance's long-lived authorization code. The server stores it encrypted and keeps it available to view or change; changing it requires the client to pair again.")}</p><div className="sarmg-actions">{!device.revoked&&<Button disabled={busy} onClick={()=>setConfirm({title:t("更换密码", "Change password"),description:t("这会立即撤销当前客户端凭据。客户端必须使用新的授权码重新配对后才能连接。", "This immediately revokes the current client credential. The client must pair again with the new authorization code before it can reconnect."),run:()=>perform(async()=>{const value=await client.request(base+"/authorization",isClientAuthorization,{method:"PUT",body:JSON.stringify({authorization_code:randomAuthorizationCode()})});setAuthorization(value);notify(t("密码已更换，请在客户端使用新授权码重新配对。", "Password changed. Pair the client again with the new authorization code."))})})}>{t("更换密码", "Change password")}</Button>}
  {device.pairing_pending&&!device.registered&&!device.revoked&&<Button disabled={busy} onClick={()=>setConfirm({title:t("取消配对", "Cancel pairing"),description:t("当前授权码将停止配对；取消后可永久删除该实例，也可通过“更换密码”恢复。", "The current authorization code will stop pairing. Afterwards the instance can be deleted permanently or reactivated with Change password."),run:()=>perform(async()=>{await client.request(base+"/pairing",(value):value is undefined=>value===undefined,{method:"DELETE"})})})}>{t("取消配对", "Cancel pairing")}</Button>}
  {device.registered&&!device.revoked&&<Button disabled={busy} onClick={()=>setConfirm({title:t("撤销设备凭据", "Revoke device credentials"),description:t("将断开 客户端 并永久禁止该设备凭据。执行中的任务可能变为不确定；如需重新注册，请新建设备。", "This disconnects the client and permanently revokes its credentials. Running tasks may have an unknown outcome. Create a new device to register again."),run:()=>perform(async()=>{await client.request(base+"/revoke",(value):value is undefined=>value===undefined,{method:"POST"})})})}>{t("撤销设备凭据", "Revoke device credentials")}</Button>}
