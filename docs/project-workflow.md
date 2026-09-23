@@ -44,5 +44,7 @@ Client 执行前再次校验 binding、permission、revision、字段白名单�
 Server 仅发布 Linux AMD64 binary 与 Web。build.rs 从 `Cargo.lock` 自动派生唯一 Foundation revision；正式
 binary 还绑定源码 revision、Schema revision 7 和 Web 资产。Release 树需通过自校验和篡改负例。
 
-产品没有 backup/restore/migration/key rotation。当前 `sarmg-upgrade` 未支持 0.11.10，不能使用旧 0.8.0
-适配器；需要转换时先在升级仓增加精确输入/输出身份和隔离恢复验收。
+产品进程没有 backup/restore/migration/key rotation。当前 `sarmg-upgrade` 支持本软件所用
+`0.10.1` / revision 7 数据库身份的 keyed SQLite backup/verify/restore，不支持 Sunshine recover
+或跨 Schema 升级。执行前核对 `support --json`，并按升级工具的合同提供 credentials key；需要转换时
+先在升级仓增加精确输入/输出身份和隔离恢复验收。

@@ -122,12 +122,15 @@ LocalSystem 使用计算机信任存储。本机 Sunshine 必须使用 HTTPS 回
 ## 7. 当前连续性限制与外部升级边界
 
 Sunshine Manager 产品仓没有 backup、restore、Schema conversion、key rotation 或 re-encryption 命令。
-`sarmg-upgrade` 是这些能力的唯一所有者，其当前支持矩阵只声明 Sunshine 0.8.0 精确身份的 keyed
-backup/verify/restore，并未声明支持本仓当前 0.11.10。不能因依赖更新或构建通过推定备份可跨版本恢复；
-在对应 adapter 和实际验收完成前，不对当前实例执行该工具的旧版本恢复流程。
+当前 Server 软件版本为 0.11.10，数据库身份独立保持为 Sunshine Manager `0.10.1`、Schema revision 7、
+SHA-256 `1acc8f2d9fac7ec4e973dd7e43cf5099e4a0b713b58a59e4969797602030d5d2`。
+`sarmg-upgrade` 当前支持这一精确身份的 keyed SQLite backup/verify/restore；执行前核对实际工具的
+`support --json`，按其运维文档提供独立的 credentials key，并在隔离环境验证恢复。当前不支持 Sunshine
+的 recover、key rotation 或从该身份到新 Schema 的升级边。
 
-需要新环境时，创建全新当前数据库并重新登记实例；已有数据与秘密保持原样，等待明确支持当前身份的
-离线方案。不要把非当前库交给 Server，不逐表复制或修改 metadata；产品仓不增加兼容分支。
+新环境可以恢复经过验证的当前身份备份，也可以创建全新当前数据库并重新登记实例。目标软件若要求不同
+Schema，须等待 `sarmg-upgrade` 增加精确输入/输出身份的离线升级边。不要把非当前库交给 Server，
+不逐表复制或修改 metadata；产品仓不增加兼容分支。
 
 ## 8. 监控与故障定位
 
