@@ -9,7 +9,7 @@ Sunshine 用户名和密码仅在 Client 本机配置，不在 Manager 的连接
 | --- | --- |
 | 实例列表 | 按操作系统显示实例总数/在线统计，再按账户名的字母数字顺序一次显示全部实例并可选择实例 |
 | 详细信息 | 授权码与实例、配置、应用/封面、Moonlight 配对、Sunshine 日志/诊断、显示/输入维护和固定服务控制 |
-| 日志 | 按创建时间倒序（同一时间按操作 ID 倒序）查询 Manager 持久操作及结果，核对不确定结果；与 Sunshine 本机日志分开 |
+| 日志 | 默认选择服务器时区的当天，也可选择日期；单次读取当前管理员对该实例在所选日期的全部 Manager 持久操作及结果，按创建时间倒序（同一时间按操作 ID 倒序）展示；页面提供手动刷新与不确定结果核对，并与 Sunshine 本机日志分开 |
 
 ## 配置字段合同
 
@@ -45,6 +45,20 @@ Client 管理设备配对不是 Sunshine–Moonlight 串流配对，不改变原
 202 只表示任务已持久化，并不表示执行成功。任务复用 Foundation 的
 `pending/running/succeeded/failed/unknown/dead_letter/resolved` 状态，重复投递先核对持久执行事实。
 不确定结果不盲目重复重启，人工核对也不等于重新执行。刷新或退出不取消已接受任务。
+
+`GET /api/v2/sunshine/devices/{id}/tasks/calendar` 返回服务器时区的当天日期；
+`GET /api/v2/sunshine/devices/{id}/tasks?date=YYYY-MM-DD` 返回当前管理员在该服务器日期的
+全部操作数组，不截断、不分页。服务器将日期解析为本机时区相邻两个午夜的半开区间，
+按任务创建时间筛选；浏览器时区不参与日志日期划分。
+日志页单次响应使用 Foundation JSON 传输允许的 64 MiB 上限和 120 秒超时；
+超出这些边界时显示读取错误。
+每条日志显示服务端转换的创建日期、时间和 UTC 偏移。
+`GET /api/v2/sunshine/devices/{id}/tasks?recent=50` 仅返回最新 50 条，供详情页定期刷新近期结果；
+较早任务可选择对应日期在日志页完整查看。无日期或 `recent` 参数的请求无效。
+`GET /api/v2/sunshine/devices/{id}/tasks/summary` 仅返回该实例所有管理员的
+`blocking_count`，计入 `pending`、`running` 和 `unknown`，不披露其他管理员的任务内容。
+若阻塞任务不在当前管理员所选日期的日志中，可选择相关日期核对；其他管理员的任务由原操作者核对。
+详情页取得此计数前或读取失败时，暂时禁用新的管理操作；日志页进入时、切换日期及手动刷新时读取所选日期的完整数组。
 
 ## 验证边界
 

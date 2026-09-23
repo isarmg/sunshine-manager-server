@@ -1,10 +1,12 @@
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use sunshine_client_protocol::{
     Capabilities, ClientOs, Command, PROTOCOL, Rejection, Report, SUNSHINE_VERSION, Uncertainty,
 };
 use sunshine_manager::{
+    AppError,
     crypto::SecretBox,
     db,
-    operations::{OperationManager, OperationState},
+    operations::{OperationManager, OperationState, server_date_bounds},
 };
 use uuid::Uuid;
 
@@ -81,6 +83,189 @@ async fn operation_history_uses_creation_time_then_id_instead_of_union_order() {
         .map(|operation| operation.operation_id)
         .collect();
     assert_eq!(listed, vec![ids[2].clone(), ids[1].clone(), ids[0].clone()]);
+}
+
+#[tokio::test]
+async fn complete_history_includes_old_uncertain_work_and_global_blocking_count() {
+    let (_dir, pool) = database().await;
+    let (id, _) = registered(&pool).await;
+    let ops = manager(&pool);
+    let old_unknown = ops
+        .enqueue("admin", &id, "old-unknown", Command::ReadConfig {})
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE _sarmg_operations SET state='unknown',created_at_micros=1 WHERE operation_id=?",
+    )
+    .bind(&old_unknown.operation_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut newer = Vec::new();
+    for index in 0..175 {
+        newer.push(
+            ops.enqueue(
+                "admin",
+                &id,
+                &format!("bulk-{index}"),
+                Command::ReadDiagnostics {},
+            )
+            .await
+            .unwrap()
+            .operation_id,
+        );
+    }
+    let other = ops
+        .enqueue("second-admin", &id, "other-actor", Command::ReadConfig {})
+        .await
+        .unwrap();
+    let listed = ops.list_for_actor("admin", &id).await.unwrap();
+    assert_eq!(listed.len(), 176);
+    assert_eq!(
+        listed.last().unwrap().operation_id,
+        old_unknown.operation_id
+    );
+    assert_eq!(listed.last().unwrap().state, OperationState::Unknown);
+    assert!(
+        !listed
+            .iter()
+            .any(|item| item.operation_id == other.operation_id)
+    );
+    assert_eq!(
+        ops.list_for_actor("second-admin", &id).await.unwrap().len(),
+        1
+    );
+    assert_eq!(
+        ops.summary_for_device(&id).await.unwrap().blocking_count,
+        177
+    );
+    let recent = ops.recent_for_actor("admin", &id).await.unwrap();
+    assert_eq!(recent.len(), 50);
+    assert!(
+        !recent
+            .iter()
+            .any(|item| item.operation_id == old_unknown.operation_id)
+    );
+    assert!(
+        !recent
+            .iter()
+            .any(|item| item.operation_id == other.operation_id)
+    );
+
+    // Same-time records have a stable ID tie-breaker; a new insert must not hide old work.
+    let tie_time = db::now_micros().unwrap() + 1_000_000;
+    for operation_id in [&newer[0], &newer[1]] {
+        sqlx::query(
+            "UPDATE _sarmg_operations SET created_at_micros=?,updated_at_micros=? \
+             WHERE operation_id=?",
+        )
+        .bind(tie_time)
+        .bind(tie_time)
+        .bind(operation_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let after = ops.list_for_actor("admin", &id).await.unwrap();
+    let tied = after
+        .iter()
+        .filter(|item| item.created_at_micros == tie_time)
+        .map(|item| item.operation_id.as_str())
+        .collect::<Vec<_>>();
+    let mut expected = vec![newer[0].as_str(), newer[1].as_str()];
+    expected.sort_by(|a, b| b.cmp(a));
+    assert_eq!(tied, expected);
+    let inserted = ops
+        .enqueue("admin", &id, "concurrent-insert", Command::ReadConfig {})
+        .await
+        .unwrap();
+    let after_insert = ops.list_for_actor("admin", &id).await.unwrap();
+    assert_eq!(after_insert.len(), 177);
+    assert!(
+        after_insert
+            .iter()
+            .any(|item| item.operation_id == inserted.operation_id)
+    );
+    assert!(
+        after_insert
+            .iter()
+            .any(|item| item.operation_id == old_unknown.operation_id)
+    );
+
+    // A selected day includes both its first microsecond and all older uncertain work,
+    // excludes the next midnight, and never reveals another administrator's details.
+    let (from, to) = server_date_bounds("2027-01-15").unwrap();
+    sqlx::query(
+        "UPDATE _sarmg_operations SET created_at_micros=?,updated_at_micros=? WHERE target_key=?",
+    )
+    .bind(from + 1)
+    .bind(to)
+    .bind(&id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    for (operation_id, boundary) in [
+        (&old_unknown.operation_id, from),
+        (&newer[0], from - 1),
+        (&inserted.operation_id, to),
+    ] {
+        sqlx::query("UPDATE _sarmg_operations SET created_at_micros=? WHERE operation_id=?")
+            .bind(boundary)
+            .bind(operation_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let dated = ops
+        .list_for_actor_on_server_date("admin", &id, "2027-01-15")
+        .await
+        .unwrap();
+    assert_eq!(dated.len(), 175);
+    assert_eq!(dated.last().unwrap().operation_id, old_unknown.operation_id);
+    assert!(
+        dated
+            .iter()
+            .all(|item| item.created_at_server.starts_with("2027-01-15 "))
+    );
+    assert!(
+        !dated
+            .iter()
+            .any(|item| item.operation_id == inserted.operation_id
+                || item.operation_id == newer[0]
+                || item.operation_id == other.operation_id)
+    );
+    assert!(matches!(
+        ops.list_for_actor_on_server_date("admin", &id, "2027-02-30")
+            .await,
+        Err(AppError::BadRequest(_))
+    ));
+}
+
+#[test]
+fn server_calendar_uses_local_day_boundaries() {
+    for date in ["2027-01-15", "2027-03-14", "2027-11-07"] {
+        let day = NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap();
+        let (from, to) = server_date_bounds(date).unwrap();
+        assert!(from < to);
+        let at_start = DateTime::<Utc>::from_timestamp_micros(from)
+            .unwrap()
+            .with_timezone(&Local);
+        let before_end = DateTime::<Utc>::from_timestamp_micros(to - 1)
+            .unwrap()
+            .with_timezone(&Local);
+        let at_end = DateTime::<Utc>::from_timestamp_micros(to)
+            .unwrap()
+            .with_timezone(&Local);
+        assert_eq!(at_start.date_naive(), day);
+        assert_eq!(before_end.date_naive(), day);
+        assert_eq!(at_end.date_naive(), day.succ_opt().unwrap());
+    }
+    if std::env::var("TZ").as_deref() == Ok("America/New_York") {
+        let (spring_start, spring_end) = server_date_bounds("2027-03-14").unwrap();
+        let (fall_start, fall_end) = server_date_bounds("2027-11-07").unwrap();
+        assert_eq!(spring_end - spring_start, 23 * 60 * 60 * 1_000_000);
+        assert_eq!(fall_end - fall_start, 25 * 60 * 60 * 1_000_000);
+    }
 }
 async fn registered(pool: &sqlx::SqlitePool) -> (String, String) {
     let ticket = db::create_device(pool, &secrets(), "测试设备", "admin")

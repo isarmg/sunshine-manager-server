@@ -6,13 +6,14 @@ use crate::{
         ClientAuthorization, CreateDeviceRequest, DeviceName, DeviceView,
         OperationResolutionRequest, UpdateClientAuthorization,
     },
-    operations::{OperationManager, OperationView},
+    operations::{OperationManager, OperationSummary, OperationView},
     release_contract::{API_NAMESPACE, API_VERSION_PREFIX},
 };
 use axum::{
     Json, Router,
     extract::{
-        ConnectInfo, DefaultBodyLimit, Extension, Path, Request, State,
+        ConnectInfo, DefaultBodyLimit, Extension, Path, Query, Request, State,
+        rejection::QueryRejection,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, StatusCode},
@@ -20,10 +21,11 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, patch, post},
 };
+use chrono::Local;
 use sarmg_admin_auth::AdministratorOriginMode;
 use sarmg_admin_core::AdministratorService;
 use sarmg_admin_sqlite::SqliteAdministratorStore;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use sunshine_client_protocol::{
     Binding, ClientMessage, Command, DeliveryMode, MAX_MESSAGE_BYTES, ManagerMessage, PROTOCOL,
@@ -99,6 +101,14 @@ pub fn router(
         .route(
             "/sunshine/devices/{id}/tasks",
             get(device_tasks).post(submit_task),
+        )
+        .route(
+            "/sunshine/devices/{id}/tasks/summary",
+            get(device_task_summary),
+        )
+        .route(
+            "/sunshine/devices/{id}/tasks/calendar",
+            get(device_task_calendar),
         )
         .route("/sunshine/operations/{id}", get(operation_get))
         .route("/sunshine/operations/{id}/resolve", post(operation_resolve))
@@ -245,10 +255,48 @@ async fn device_tasks(
     State(state): State<WorkerState>,
     Extension(actor): Extension<InternalIdentity>,
     Path(id): Path<String>,
+    query: Result<Query<TaskListQuery>, QueryRejection>,
 ) -> AppResult<Json<Vec<OperationView>>> {
-    Ok(Json(
-        state.operations.list_for_actor(&actor.subject, &id).await?,
-    ))
+    let query = query
+        .map_err(|_| AppError::BadRequest("无效的任务日志查询参数".into()))?
+        .0;
+    let values = match (query.recent, query.date) {
+        (Some(50), None) => {
+            state
+                .operations
+                .recent_for_actor(&actor.subject, &id)
+                .await?
+        }
+        (None, Some(date)) => {
+            state
+                .operations
+                .list_for_actor_on_server_date(&actor.subject, &id, &date)
+                .await?
+        }
+        _ => return Err(AppError::BadRequest("无效的任务日志查询参数".into())),
+    };
+    Ok(Json(values))
+}
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TaskListQuery {
+    recent: Option<u16>,
+    date: Option<String>,
+}
+#[derive(Serialize)]
+struct TaskCalendar {
+    today: String,
+}
+async fn device_task_calendar() -> Json<TaskCalendar> {
+    Json(TaskCalendar {
+        today: Local::now().format("%Y-%m-%d").to_string(),
+    })
+}
+async fn device_task_summary(
+    State(state): State<WorkerState>,
+    Path(id): Path<String>,
+) -> AppResult<Json<OperationSummary>> {
+    Ok(Json(state.operations.summary_for_device(&id).await?))
 }
 async fn submit_task(
     State(state): State<WorkerState>,
@@ -604,16 +652,18 @@ mod tests {
 
     #[tokio::test]
     async fn private_route_requires_a_session_cookie() {
-        let private = test_router()
-            .await
-            .oneshot(
-                Request::get("/api/v2/sunshine/devices")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(private.status(), StatusCode::UNAUTHORIZED);
+        for path in [
+            "/api/v2/sunshine/devices",
+            "/api/v2/sunshine/devices/unknown/tasks/calendar",
+            "/api/v2/sunshine/devices/unknown/tasks/summary",
+        ] {
+            let private = test_router()
+                .await
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(private.status(), StatusCode::UNAUTHORIZED, "{path}");
+        }
     }
 
     #[tokio::test]
@@ -949,6 +999,62 @@ mod tests {
                 .unwrap();
         let refreshed_csrf = current_body["csrf_token"].as_str().unwrap().to_string();
         assert_eq!(refreshed_csrf, csrf);
+
+        let before_calendar = Local::now().format("%Y-%m-%d").to_string();
+        let calendar = application
+            .clone()
+            .oneshot(
+                Request::get("/api/v2/sunshine/devices/unknown/tasks/calendar")
+                    .header(header::COOKIE, &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(calendar.status(), StatusCode::OK);
+        let calendar: Value =
+            serde_json::from_slice(&calendar.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        let today = calendar["today"].as_str().unwrap();
+        let after_calendar = Local::now().format("%Y-%m-%d").to_string();
+        assert!(today == before_calendar || today == after_calendar);
+        for (query, expected) in [
+            (format!("?date={today}"), StatusCode::OK),
+            ("?recent=50".to_string(), StatusCode::OK),
+            ("".to_string(), StatusCode::BAD_REQUEST),
+            ("?date=2027-02-30".to_string(), StatusCode::BAD_REQUEST),
+            (
+                "?date=2027-01-15&recent=50".to_string(),
+                StatusCode::BAD_REQUEST,
+            ),
+        ] {
+            let response = application
+                .clone()
+                .oneshot(
+                    Request::get(format!("/api/v2/sunshine/devices/unknown/tasks{query}"))
+                        .header(header::COOKIE, &cookie)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected, "{query}");
+        }
+        let summary = application
+            .clone()
+            .oneshot(
+                Request::get("/api/v2/sunshine/devices/unknown/tasks/summary")
+                    .header(header::COOKIE, &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(summary.status(), StatusCode::OK);
+        let summary: Value =
+            serde_json::from_slice(&summary.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(summary["blocking_count"], 0);
 
         let missing_csrf = application
             .clone()

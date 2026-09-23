@@ -44,7 +44,9 @@ export type Command=
  |{kind:"read_service_status"}
  |{kind:"control_service";action:"start"|"stop"|"restart";administrator_confirmed:true};
 export type Report={kind:string;snapshot?:Snapshot|ApplicationsSnapshot|PairedClientsSnapshot|DiagnosticSnapshot;page?:LogPage;status?:VirtualInputStatus;state?:string;path?:string;action?:string;reason?:string;actual_revision?:string};
-export type Operation={operation_id:string;device_id:string;action:string;state:"pending"|"running"|"succeeded"|"failed"|"unknown"|"dead_letter"|"resolved";attempt:number;created_at_micros:number;updated_at_micros:number;result:Report|null;reconciliation:Report|null;resolution:string|null;status_reason?:string|null};
+export type Operation={operation_id:string;device_id:string;action:string;state:"pending"|"running"|"succeeded"|"failed"|"unknown"|"dead_letter"|"resolved";attempt:number;created_at_micros:number;created_at_server:string;updated_at_micros:number;result:Report|null;reconciliation:Report|null;resolution:string|null;status_reason?:string|null};
+export type OperationSummary={blocking_count:number};
+export type TaskCalendar={today:string};
 
 export function record(value:unknown):value is Record<string,unknown>{return typeof value==="object"&&value!==null&&!Array.isArray(value)}
 export function isSnapshot(value:unknown):value is Snapshot{return record(value)&&typeof value.revision==="string"&&/^[a-f0-9]{64}$/.test(value.revision)&&typeof value.sunshine_version==="string"&&record(value.fields)&&Object.values(value.fields).every(field=>typeof field==="string")&&(value.effectiveness==="pending_verification"||value.effectiveness==="awaiting_restart")}
@@ -86,6 +88,8 @@ function isReport(value:unknown):value is Report{
   default:return false;
  }
 }
-export function isOperation(value:unknown):value is Operation{return record(value)&&typeof value.operation_id==="string"&&typeof value.device_id==="string"&&typeof value.action==="string"&&typeof value.state==="string"&&["pending","running","succeeded","failed","unknown","dead_letter","resolved"].includes(value.state)&&Number.isSafeInteger(value.attempt)&&Number.isSafeInteger(value.created_at_micros)&&Number.isSafeInteger(value.updated_at_micros)&&(value.result===null||isReport(value.result))&&(value.reconciliation===null||isReport(value.reconciliation))&&(value.resolution===null||typeof value.resolution==="string")&&(value.status_reason===undefined||value.status_reason===null||typeof value.status_reason==="string")}
+export function isOperation(value:unknown):value is Operation{return record(value)&&typeof value.operation_id==="string"&&typeof value.device_id==="string"&&typeof value.action==="string"&&typeof value.state==="string"&&["pending","running","succeeded","failed","unknown","dead_letter","resolved"].includes(value.state)&&Number.isSafeInteger(value.attempt)&&Number.isSafeInteger(value.created_at_micros)&&typeof value.created_at_server==="string"&&Number.isSafeInteger(value.updated_at_micros)&&(value.result===null||isReport(value.result))&&(value.reconciliation===null||isReport(value.reconciliation))&&(value.resolution===null||typeof value.resolution==="string")&&(value.status_reason===undefined||value.status_reason===null||typeof value.status_reason==="string")}
 export function isOperations(value:unknown):value is Operation[]{return Array.isArray(value)&&value.every(isOperation)}
+export function isOperationSummary(value:unknown):value is OperationSummary{return record(value)&&Object.keys(value).length===1&&Number.isSafeInteger(value.blocking_count)&&Number(value.blocking_count)>=0}
+export function isTaskCalendar(value:unknown):value is TaskCalendar{return record(value)&&typeof value.today==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value.today)}
 export function currentErrorEnvelope(error:unknown):ErrorEnvelope|undefined{if(!isApiClientError(error))return undefined;return isErrorEnvelope(error.envelope)?error.envelope:undefined}

@@ -4,12 +4,14 @@ use crate::{
     db,
     error::{AppError, AppResult},
 };
+use chrono::{DateTime, Local, NaiveDate, TimeDelta, TimeZone, Utc};
 pub use sarmg_operations::OperationState;
 use sarmg_operations::{
     EnqueueOutcome, NewOperation, SqliteOperationStore, StoredOperation, Transition,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sqlx::FromRow;
 use std::{sync::Arc, time::Duration};
 use sunshine_client_protocol::{
     Binding, Capabilities, Command, ConfigSnapshot, PROTOCOL, Permission, Report, Task,
@@ -46,11 +48,79 @@ pub struct OperationView {
     pub state: OperationState,
     pub attempt: i64,
     pub created_at_micros: i64,
+    pub created_at_server: String,
     pub updated_at_micros: i64,
     pub result: Option<Report>,
     pub reconciliation: Option<Report>,
     pub resolution: Option<String>,
     pub status_reason: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+pub struct OperationSummary {
+    pub blocking_count: i64,
+}
+
+fn server_timestamp(micros: i64) -> AppResult<String> {
+    let utc = DateTime::<Utc>::from_timestamp_micros(micros)
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("任务创建时间无效")))?;
+    Ok(utc
+        .with_timezone(&Local)
+        .format("%Y-%m-%d %H:%M:%S%.6f %:z")
+        .to_string())
+}
+
+pub fn server_date_bounds(date: &str) -> AppResult<(i64, i64)> {
+    let bytes = date.as_bytes();
+    if bytes.len() != 10
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes
+            .iter()
+            .enumerate()
+            .any(|(index, byte)| index != 4 && index != 7 && !byte.is_ascii_digit())
+    {
+        return Err(AppError::BadRequest("无效的服务器日期".into()));
+    }
+    let day = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|_| AppError::BadRequest("无效的服务器日期".into()))?;
+    let next = day
+        .succ_opt()
+        .ok_or_else(|| AppError::BadRequest("无效的服务器日期".into()))?;
+    fn start(day: NaiveDate) -> AppResult<i64> {
+        let midnight = day
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| AppError::BadRequest("无效的服务器日期".into()))?;
+        // Some time zones advance at midnight. Find the first valid local time,
+        // including the following midnight when a whole calendar day is skipped.
+        for second in 0..=86_400 {
+            let local_time = midnight + TimeDelta::seconds(second);
+            match Local.from_local_datetime(&local_time) {
+                chrono::LocalResult::Single(value) => return Ok(value.timestamp_micros()),
+                chrono::LocalResult::Ambiguous(first, second) => {
+                    return Ok(first.timestamp_micros().min(second.timestamp_micros()));
+                }
+                chrono::LocalResult::None => {}
+            }
+        }
+        Err(AppError::BadRequest("无法解析服务器日期".into()))
+    }
+    Ok((start(day)?, start(next)?))
+}
+
+#[derive(FromRow)]
+struct OperationListRow {
+    operation_id: String,
+    target_key: String,
+    action: String,
+    state: String,
+    attempt: i64,
+    created_at_micros: i64,
+    updated_at_micros: i64,
+    result_payload: Option<Vec<u8>>,
+    report_json: Option<String>,
+    resolution_code: Option<String>,
+    error_code: Option<String>,
 }
 fn namespace(device_id: &str, installation_id: &Uuid, resource: &str) -> String {
     format!("sunshine.client.v2.{device_id}.{installation_id}.{resource}")
@@ -291,6 +361,7 @@ impl OperationManager {
             state: stored.operation.state,
             attempt: i64::from(stored.operation.attempt),
             created_at_micros: stored.created_at_micros,
+            created_at_server: server_timestamp(stored.created_at_micros)?,
             updated_at_micros: stored.updated_at_micros,
             result: stored
                 .result_payload
@@ -325,29 +396,104 @@ impl OperationManager {
         self.view(stored).await
     }
     pub async fn list_for_actor(&self, actor: &str, device: &str) -> AppResult<Vec<OperationView>> {
-        let ids: Vec<String> = sqlx::query_scalar(
-            "WITH selected AS (\
-             SELECT operation_id FROM _sarmg_operations WHERE target_key=? \
-             AND json_extract(CAST(request_payload AS TEXT),'$.actor')=? \
-             AND state IN ('pending','running','unknown','dead_letter') \
-             UNION \
-             SELECT operation_id FROM (SELECT operation_id FROM _sarmg_operations \
-             WHERE target_key=? AND json_extract(CAST(request_payload AS TEXT),'$.actor')=? \
-             ORDER BY created_at_micros DESC,operation_id DESC LIMIT 50)) \
-             SELECT operation_id FROM _sarmg_operations JOIN selected USING (operation_id) \
-             ORDER BY created_at_micros DESC,operation_id DESC LIMIT 150",
+        self.list_for_actor_with_query(actor, device, None, false)
+            .await
+    }
+
+    pub async fn list_for_actor_on_server_date(
+        &self,
+        actor: &str,
+        device: &str,
+        date: &str,
+    ) -> AppResult<Vec<OperationView>> {
+        let (from_micros, to_micros) = server_date_bounds(date)?;
+        self.list_for_actor_with_query(actor, device, Some((from_micros, to_micros)), false)
+            .await
+    }
+
+    pub async fn recent_for_actor(
+        &self,
+        actor: &str,
+        device: &str,
+    ) -> AppResult<Vec<OperationView>> {
+        self.list_for_actor_with_query(actor, device, None, true)
+            .await
+    }
+
+    async fn list_for_actor_with_query(
+        &self,
+        actor: &str,
+        device: &str,
+        range: Option<(i64, i64)>,
+        recent: bool,
+    ) -> AppResult<Vec<OperationView>> {
+        // Read selected rows in one query. Full and dated logs have no row cap. Joining
+        // observations avoids one operation and one reconciliation lookup per row.
+        let projection = "SELECT op.operation_id,op.target_key,op.action,op.state,op.attempt, \
+             op.created_at_micros,op.updated_at_micros,op.result_payload, \
+             obs.report_json,op.resolution_code,op.error_code \
+             FROM _sarmg_operations AS op \
+             LEFT JOIN client_observations AS obs ON obs.operation_id=op.operation_id";
+        let limit = if recent { "LIMIT 50" } else { "" };
+        let time_filter = if range.is_some() {
+            "AND op.created_at_micros>=? AND op.created_at_micros<?"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "{projection} WHERE op.target_key=? \
+             AND json_extract(CAST(op.request_payload AS TEXT),'$.actor')=? \
+             {time_filter} ORDER BY op.created_at_micros DESC,op.operation_id DESC {limit}"
+        );
+        let mut query = sqlx::query_as::<_, OperationListRow>(&sql)
+            .bind(device)
+            .bind(actor);
+        if let Some((from_micros, to_micros)) = range {
+            query = query.bind(from_micros).bind(to_micros);
+        }
+        let rows = query.fetch_all(&self.pool).await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(OperationView {
+                    operation_id: row.operation_id,
+                    device_id: row.target_key,
+                    action: row.action,
+                    state: OperationState::parse(&row.state).map_err(internal)?,
+                    attempt: row.attempt,
+                    created_at_micros: row.created_at_micros,
+                    created_at_server: server_timestamp(row.created_at_micros)?,
+                    updated_at_micros: row.updated_at_micros,
+                    result: row
+                        .result_payload
+                        .as_deref()
+                        .map(serde_json::from_slice)
+                        .transpose()
+                        .map_err(internal)?,
+                    reconciliation: row
+                        .report_json
+                        .as_deref()
+                        .map(serde_json::from_str)
+                        .transpose()
+                        .map_err(internal)?,
+                    resolution: row.resolution_code,
+                    status_reason: match row.error_code.as_deref() {
+                        Some("authorization_rotated") => Some("authorization_rotated"),
+                        _ => None,
+                    },
+                })
+            })
+            .collect()
+    }
+
+    pub async fn summary_for_device(&self, device: &str) -> AppResult<OperationSummary> {
+        let blocking_count = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM _sarmg_operations WHERE target_key=? \
+             AND state IN ('pending','running','unknown')",
         )
         .bind(device)
-        .bind(actor)
-        .bind(device)
-        .bind(actor)
-        .fetch_all(&self.pool)
+        .fetch_one(&self.pool)
         .await?;
-        let mut views = Vec::new();
-        for id in ids {
-            views.push(self.get_for_actor(actor, &id).await?);
-        }
-        Ok(views)
+        Ok(OperationSummary { blocking_count })
     }
     pub async fn resolve_for_actor(
         &self,
