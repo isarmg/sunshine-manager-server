@@ -107,6 +107,14 @@ impl IntoResponse for AppError {
         }
         let envelope = ErrorEnvelope::with_code(code, message).retryable(retryable);
         let mut response = (status, Json(envelope)).into_response();
+        if matches!(self, Self::Unauthorized) {
+            // The Client treats only this Manager-authored marker as terminal
+            // during a WebSocket handshake. A proxy's unrelated 401 is retryable.
+            response.headers_mut().insert(
+                "x-sarmg-error-code",
+                HeaderValue::from_static("unauthorized"),
+            );
+        }
         if let Some(retry_after) = retry_after
             && let Ok(value) = retry_after.to_string().parse()
         {
@@ -128,6 +136,25 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[tokio::test]
+    async fn unauthorized_response_marks_the_manager_credential_contract() {
+        let response = AppError::Unauthorized.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()["x-sarmg-error-code"], "unauthorized");
+        assert_eq!(
+            response.headers()[axum::http::header::CONTENT_TYPE],
+            "application/json"
+        );
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let envelope: ErrorEnvelope = serde_json::from_slice(&body).unwrap();
+        assert_eq!(envelope.code.as_str(), "unauthorized");
+        assert!(!envelope.retryable);
+
+        let forbidden = AppError::Forbidden("ingress unavailable".into()).into_response();
+        assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+        assert!(!forbidden.headers().contains_key("x-sarmg-error-code"));
+    }
 
     #[tokio::test]
     async fn rate_limit_response_has_strict_envelope_and_retry_after() {

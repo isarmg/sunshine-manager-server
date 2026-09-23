@@ -5,6 +5,7 @@
 
 Client 主动建立 WSS 连接，Sunshine 凭据只保存在主机的受保护状态中。Manager 下发领域命令，Client 只调用
 HTTPS 回环地址上的固定 Sunshine API 或固定系统服务适配器。协议没有任意 HTTP、Shell、文件路径或服务名入口。
+Manager 拒绝无效设备凭据时，WebSocket 握手返回 401 与 `X-Sarmg-Error-Code: unauthorized`；入口代理须透传此响应头，Client 才能立即停止重连并等待重新配对。入口代理产生的无标识 401、入口校验 403 及临时服务错误按退避策略重连。
 
 ## 命令领域
 

@@ -617,6 +617,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn client_websocket_authentication_has_a_distinct_manager_marker() {
+        let application = test_router().await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, application).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        for (forwarded, expected) in [
+            (Some("https"), StatusCode::UNAUTHORIZED),
+            (None, StatusCode::FORBIDDEN),
+        ] {
+            let mut request = client
+                .get(format!("http://{address}/sunshine-client/v2/connect"))
+                .header(header::CONNECTION, "Upgrade")
+                .header(header::UPGRADE, "websocket")
+                .header("sec-websocket-version", "13")
+                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+                .header("sec-websocket-protocol", WEBSOCKET_SUBPROTOCOL);
+            if let Some(value) = forwarded {
+                request = request.header("x-forwarded-proto", value);
+            }
+            let response = request.send().await.unwrap();
+            assert_eq!(response.status(), expected);
+            if expected == StatusCode::UNAUTHORIZED {
+                assert_eq!(response.headers()["x-sarmg-error-code"], "unauthorized");
+                let bytes = response.bytes().await.unwrap();
+                let envelope: ErrorEnvelope = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(envelope.code.as_str(), "unauthorized");
+            } else {
+                assert!(!response.headers().contains_key("x-sarmg-error-code"));
+            }
+        }
+        server.abort();
+        let _ = server.await;
+    }
+
+    #[tokio::test]
     async fn auth_route_is_public() {
         let response = test_router()
             .await
