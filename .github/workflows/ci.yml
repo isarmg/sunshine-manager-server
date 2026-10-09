@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'codex/client-cli-*']
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  RUSTUP_TOOLCHAIN: 1.99.0
+
+jobs:
+  source:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Enforce workflow supply-chain policy
+        run: python3 scripts/check-workflow-supply-chain.py
+      - name: Validate release tooling
+        run: |
+          python3 -m py_compile scripts/package-release.py scripts/write-release-manifest.py
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+      - name: Enforce the Linux AMD64 Server target boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc -vV | grep -Fx 'host: x86_64-unknown-linux-gnu'
+          gate_binary="${RUNNER_TEMP}/xscs-build-gate"
+          gate_stderr="${RUNNER_TEMP}/xscs-build-gate.stderr"
+          rustc scripts/server-target-gate.rs -o "$gate_binary"
+          if TARGET=aarch64-unknown-linux-gnu "$gate_binary" 2>"$gate_stderr"; then
+            echo 'Server build gate accepted an unsupported target.' >&2
+            exit 1
+          fi
+          grep -F \
+            'xscs server supports only x86_64-unknown-linux-gnu' \
+            "$gate_stderr"
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.7.0
+          check-latest: false
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+      - name: Prepare embedded browser assets
+        run: web/node_modules/.bin/xcss-build-server --config foundation-web-build.json --mode development --web-only --no-install
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check the Server target
+        run: cargo check --locked --target x86_64-unknown-linux-gnu --all-targets
+      - name: Lint the Server target
+        run: cargo clippy --locked --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+      - name: Test Rust and manifest contract
+        run: cargo test --locked --target x86_64-unknown-linux-gnu
+      - name: Test and lint the product protocol
+        run: |
+          cargo test --locked -p xscs-protocol
+          cargo clippy --locked -p xscs-protocol --all-targets -- -D warnings
+      - name: Install browser acceptance engines
+        working-directory: web
+        run: npx playwright install --with-deps chromium firefox
+      - name: Verify instance and remote management UI
+        working-directory: web
+        run: npm run test:browser

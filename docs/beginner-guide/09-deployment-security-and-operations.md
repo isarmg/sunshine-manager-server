@@ -1,0 +1,11 @@
+# 09. 部署、安全与生产运维
+
+Server 只部署到 Linux AMD64 的不可变 release 树，以专用账户运行并监听 loopback。可信 HTTPS/WSS ingress
+是唯一外部入口；它必须保留浏览器同源事实，并为独立 Client 通道提供已验证 HTTPS 事实。
+
+监控 readiness、数据库/WAL、operation backlog/unknown、Client 在线和 Sunshine 可达性。pending 通常
+检查 Client/WSS；unknown 必须核对 Sunshine 与 Client 执行日志，禁止盲重试重启或配置写入。
+
+数据库和 credential key 都须保护；主 key 泄露时隔离服务并建立全新当前状态。
+
+公开问题不得附带授权码、Client credential、管理员密码、数据库、生产 URL 或 Sunshine 凭据。

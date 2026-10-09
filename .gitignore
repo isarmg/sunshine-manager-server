@@ -1,0 +1,15 @@
+target/
+dist/
+.runtime/
+*.secret
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+web/node_modules/
+web/dist/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]

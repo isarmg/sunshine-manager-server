@@ -1,0 +1,61 @@
+name: Independence gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+jobs:
+  independence:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Enforce workflow supply-chain policy
+        run: python3 scripts/check-workflow-supply-chain.py
+      - name: Reject obsolete runtime coupling and container manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Foundation packages such as xcss-platform-db are intentional
+          # build-time dependencies. This gate rejects the retired runtime
+          # container/plugin coupling only.
+          coupling_pattern='UNION_|X-Union-|PluginManifest|ProcessContext|@unionc|unionc_'
+          coupling_matches="$(
+            git grep -nE "$coupling_pattern" -- \
+              ':!.github/workflows/independence.yml' \
+              ':!CHANGELOG.md' \
+              || true
+          )"
+          if [[ -n "$coupling_matches" ]]; then
+            printf '%s\n' "$coupling_matches"
+            exit 1
+          fi
+
+          container_matches="$(
+            git ls-files | awk '
+              {
+                depth = gsub("/", "/")
+                name = $0
+                sub(/^.*\//, "", name)
+                name = tolower(name)
+                if (depth <= 4 &&
+                    (name ~ /^dockerfile/ ||
+                     name ~ /^docker-compose.*\.ya?ml$/)) {
+                  print $0
+                }
+              }
+            '
+          )"
+          if [[ -n "$container_matches" ]]; then
+            printf '%s\n' "$container_matches"
+            exit 1
+          fi

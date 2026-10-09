@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "web": {
+    "directory": "web",
+    "script": "build",
+    "dist": "dist"
+  },
+  "rust": {
+    "manifest": "Cargo.toml",
+    "package": "xscs",
+    "binary": "xscs",
+    "source_revision_env": "XSCS_SOURCE_REVISION"
+  }
+}
