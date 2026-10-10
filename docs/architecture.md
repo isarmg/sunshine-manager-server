@@ -12,7 +12,7 @@
 
 领域按 config / lifecycle / HTTP / operations / persistence 划分。`http.rs` 负责管理员与设备通道，`operations.rs` 负责业务指令、幂等、超时、未知结果和恢复，`db.rs` 负责持久数据，`crypto.rs` 负责产品秘密上下文。 `main.rs` 组合配置、初始化、运行与停止；入口不重新实现 xcss 机制。
 
-软件身份来自 Cargo，发行配置须与其一致；业务协议来自 `crates/protocol/`，当前 DDL 来自 `schema/`。当前 Schema revision/指纹为 1、`0466872562dde0c06ef73e42e683801c21cc1d7be3488ca332a5e9a3d9c0518b`，此次保持不变。Rust 与 Web xcss 使用已发布的完整 Git revision、精确版本或具备完整性摘要的发行包，不依赖同级源码作为正式构建输入。候选 xcss 联调只能作为明确记录的临时覆盖，不能伪装成已发布依赖。
+软件身份来自 Cargo，发行配置须与其一致；业务协议来自 `crates/protocol/`，当前 DDL 来自 `schema/`。当前 Schema revision/指纹为 1、`b3fdff2217ea2ba4a384e3ade29cbf87a949d63392bdff3895916ff2377bd1ba`，此次保持不变。Rust 与 Web xcss 使用已发布的完整 Git revision、精确版本或具备完整性摘要的发行包，不依赖同级源码作为正式构建输入。候选 xcss 联调只能作为明确记录的临时覆盖，不能伪装成已发布依赖。
 
 ## 运行与安全边界
 

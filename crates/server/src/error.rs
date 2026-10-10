@@ -123,10 +123,9 @@ impl IntoResponse for AppError {
         if matches!(self, Self::DeviceCredentialRejected) {
             // Only a database-confirmed invalid device credential is terminal.
             // A missing or malformed Authorization header can be caused by a proxy.
-            response.headers_mut().insert(
-                "x-xcss-error-code",
-                HeaderValue::from_static("unauthorized"),
-            );
+            response
+                .headers_mut()
+                .insert("x-error-code", HeaderValue::from_static("unauthorized"));
         }
         if let Some(retry_after) = retry_after
             && let Ok(value) = retry_after.to_string().parse()
@@ -154,7 +153,7 @@ mod tests {
     async fn rejected_device_credential_marks_the_manager_credential_contract() {
         let response = AppError::DeviceCredentialRejected.into_response();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(response.headers()["x-xcss-error-code"], "unauthorized");
+        assert_eq!(response.headers()["x-error-code"], "unauthorized");
         assert_eq!(
             response.headers()[axum::http::header::CONTENT_TYPE],
             "application/json"
@@ -166,15 +165,11 @@ mod tests {
 
         let missing_authorization = AppError::Unauthorized.into_response();
         assert_eq!(missing_authorization.status(), StatusCode::UNAUTHORIZED);
-        assert!(
-            !missing_authorization
-                .headers()
-                .contains_key("x-xcss-error-code")
-        );
+        assert!(!missing_authorization.headers().contains_key("x-error-code"));
 
         let forbidden = AppError::Forbidden("ingress unavailable".into()).into_response();
         assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
-        assert!(!forbidden.headers().contains_key("x-xcss-error-code"));
+        assert!(!forbidden.headers().contains_key("x-error-code"));
     }
 
     #[tokio::test]

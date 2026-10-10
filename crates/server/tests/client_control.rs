@@ -107,7 +107,7 @@ async fn operation_history_uses_creation_time_then_id_instead_of_union_order() {
     let now = db::now_micros().unwrap();
     for (operation_id, created) in [(&ids[0], now - 2_000_000), (&ids[1], now), (&ids[2], now)] {
         sqlx::query(
-            "UPDATE _xcss_operations SET created_at_micros=?,updated_at_micros=? \
+            "UPDATE _common_operations SET created_at_micros=?,updated_at_micros=? \
              WHERE operation_id=?",
         )
         .bind(created)
@@ -135,7 +135,7 @@ async fn complete_history_includes_old_uncertain_work_and_global_blocking_count(
         .await
         .unwrap();
     sqlx::query(
-        "UPDATE _xcss_operations SET state='unknown',created_at_micros=1 WHERE operation_id=?",
+        "UPDATE _common_operations SET state='unknown',created_at_micros=1 WHERE operation_id=?",
     )
     .bind(&old_unknown.operation_id)
     .execute(&pool)
@@ -235,7 +235,7 @@ async fn complete_history_includes_old_uncertain_work_and_global_blocking_count(
     let tie_time = db::now_micros().unwrap() + 1_000_000;
     for operation_id in [&newer[0], &newer[1]] {
         sqlx::query(
-            "UPDATE _xcss_operations SET created_at_micros=?,updated_at_micros=? \
+            "UPDATE _common_operations SET created_at_micros=?,updated_at_micros=? \
              WHERE operation_id=?",
         )
         .bind(tie_time)
@@ -300,7 +300,7 @@ async fn complete_history_includes_old_uncertain_work_and_global_blocking_count(
     // excludes the next midnight, and never reveals another administrator's details.
     let (from, to) = server_date_bounds("2027-01-15").unwrap();
     sqlx::query(
-        "UPDATE _xcss_operations SET created_at_micros=?,updated_at_micros=? WHERE target_key=?",
+        "UPDATE _common_operations SET created_at_micros=?,updated_at_micros=? WHERE target_key=?",
     )
     .bind(from + 1)
     .bind(to)
@@ -313,7 +313,7 @@ async fn complete_history_includes_old_uncertain_work_and_global_blocking_count(
         (&newer[0], from - 1),
         (&inserted.operation_id, to),
     ] {
-        sqlx::query("UPDATE _xcss_operations SET created_at_micros=? WHERE operation_id=?")
+        sqlx::query("UPDATE _common_operations SET created_at_micros=? WHERE operation_id=?")
             .bind(boundary)
             .bind(operation_id)
             .execute(&pool)
@@ -630,14 +630,14 @@ async fn rotating_authorization_retires_old_tasks_before_the_same_installation_r
         assert_eq!(api_value["status_reason"], "authorization_rotated");
         assert!(api_value.get("error_code").is_none());
         let error: String =
-            sqlx::query_scalar("SELECT error_code FROM _xcss_operations WHERE operation_id=?")
+            sqlx::query_scalar("SELECT error_code FROM _common_operations WHERE operation_id=?")
                 .bind(&operation.operation_id)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
         assert_eq!(error, expected_error);
         let events: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM _xcss_operation_audit_outbox \
+            "SELECT COUNT(*) FROM _common_operation_audit_outbox \
              WHERE operation_id=? AND to_state=?",
         )
         .bind(&operation.operation_id)
@@ -979,7 +979,7 @@ async fn stale_restart_authorization_expires_before_delivery() {
         .await
         .unwrap();
     sqlx::query(
-        "UPDATE _xcss_operations SET created_at_micros=created_at_micros-? WHERE operation_id=?",
+        "UPDATE _common_operations SET created_at_micros=created_at_micros-? WHERE operation_id=?",
     )
     .bind(16_i64 * 60 * 1_000_000)
     .bind(&queued.operation_id)
@@ -989,7 +989,7 @@ async fn stale_restart_authorization_expires_before_delivery() {
     session(&pool, &id, "s1").await;
     assert!(ops.next(&id, "s1").await.unwrap().is_none());
     let state: (String, Option<String>) =
-        sqlx::query_as("SELECT state,error_code FROM _xcss_operations WHERE operation_id=?")
+        sqlx::query_as("SELECT state,error_code FROM _common_operations WHERE operation_id=?")
             .bind(&queued.operation_id)
             .fetch_one(&pool)
             .await
@@ -1326,7 +1326,7 @@ async fn oversized_stored_report_is_rejected_without_fetching_its_full_blob() {
         .enqueue("admin", &device, "large-result", Command::ReadConfig {})
         .await
         .unwrap();
-    sqlx::query("UPDATE _xcss_operations SET result_payload=zeroblob(?) WHERE operation_id=?")
+    sqlx::query("UPDATE _common_operations SET result_payload=zeroblob(?) WHERE operation_id=?")
         .bind((xscs_protocol::MAX_REPORT_BYTES * 4) as i64)
         .bind(row.operation_id)
         .execute(&pool)
@@ -1365,7 +1365,7 @@ async fn oversized_stored_history_text_fails_closed_without_blocking_other_insta
     let oversized = "x".repeat(1024 * 1024);
     for column in ["action", "error_code", "resolution_code"] {
         sqlx::query(sqlx::AssertSqlSafe(format!(
-            "UPDATE _xcss_operations SET {column}=? WHERE operation_id=?"
+            "UPDATE _common_operations SET {column}=? WHERE operation_id=?"
         )))
         .bind(&oversized)
         .bind(&row.operation_id)
@@ -1377,7 +1377,7 @@ async fn oversized_stored_history_text_fails_closed_without_blocking_other_insta
             Err(AppError::Internal(_))
         ));
         sqlx::query(sqlx::AssertSqlSafe(format!(
-            "UPDATE _xcss_operations SET {column}=? WHERE operation_id=?"
+            "UPDATE _common_operations SET {column}=? WHERE operation_id=?"
         )))
         .bind(if column == "action" {
             Some(row.action.as_str())

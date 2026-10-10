@@ -232,7 +232,7 @@ async fn retire_operations_for_authorization_rotation(
     // Rotation fences delivery in the same write transaction that clears the
     // old credential. Pending work did not run; running work needs review.
     let operations: Vec<(String, String)> = sqlx::query_as(
-        "SELECT operation_id,state FROM _xcss_operations \
+        "SELECT operation_id,state FROM _common_operations \
          WHERE target_key=? AND state IN ('pending','running') ORDER BY operation_id",
     )
     .bind(device_id)
@@ -245,7 +245,7 @@ async fn retire_operations_for_authorization_rotation(
             "unknown"
         };
         let changed = sqlx::query(
-            "UPDATE _xcss_operations SET state=?,error_code='authorization_rotated',\
+            "UPDATE _common_operations SET state=?,error_code='authorization_rotated',\
              lease_owner=NULL,lease_expiry_micros=NULL,updated_at_micros=? \
              WHERE operation_id=? AND state=?",
         )
@@ -262,7 +262,7 @@ async fn retire_operations_for_authorization_rotation(
             )));
         }
         sqlx::query(
-            "INSERT INTO _xcss_operation_audit_outbox \
+            "INSERT INTO _common_operation_audit_outbox \
              (event_id,operation_id,from_state,to_state,payload_json,created_at_micros) \
              VALUES(?,?,?,?,?,?)",
         )
@@ -545,7 +545,7 @@ pub async fn require_current_runtime_state(
     let store = xcss::operations::SqliteOperationStore::new(pool.clone());
     let mut cursor = String::new();
     loop {
-        let ids:Vec<String>=sqlx::query_scalar("SELECT operation_id FROM _xcss_operations WHERE operation_id>? ORDER BY operation_id LIMIT 128").bind(&cursor).fetch_all(pool).await?;
+        let ids:Vec<String>=sqlx::query_scalar("SELECT operation_id FROM _common_operations WHERE operation_id>? ORDER BY operation_id LIMIT 128").bind(&cursor).fetch_all(pool).await?;
         if ids.is_empty() {
             break;
         }

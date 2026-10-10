@@ -375,7 +375,7 @@ async fn serve_with_config(
         xcss::server_runtime::ServerRuntime::builder(xcss::server_runtime::ProductDescriptor {
             id: "xscs".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            xcss_revision: env!("XCSS_REVISION").to_owned(),
+            common_revision: env!("XCSS_REVISION").to_owned(),
             profile: "server-control-plane".to_owned(),
             capabilities: vec![
                 "embedded-web".into(),

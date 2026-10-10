@@ -42,7 +42,7 @@ function running() {
 }
 async function ready() {
   const response = await fetch(`${address}/readyz`, { signal: AbortSignal.timeout(1500), redirect: "error" });
-  if (!response.ok || response.headers.get("x-xcss-service") !== "xscs" || JSON.stringify(await response.json()) !== '{"ready":true}') throw new Error("Service is not ready");
+  if (!response.ok || response.headers.get("x-service") !== "xscs" || JSON.stringify(await response.json()) !== '{"ready":true}') throw new Error("Service is not ready");
 }
 const command = process.argv[2] ?? "status";
 const options = process.argv.slice(3);

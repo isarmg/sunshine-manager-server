@@ -968,7 +968,7 @@ mod tests {
         xcss::server_runtime::platform_handle(xcss::server_runtime::ProductDescriptor {
             id: "xscs".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            xcss_revision: env!("XCSS_REVISION").to_owned(),
+            common_revision: env!("XCSS_REVISION").to_owned(),
             profile: "server-control-plane".to_owned(),
             capabilities: vec!["embedded-web".into(), "server-runtime".to_owned()],
         })
@@ -1117,12 +1117,9 @@ mod tests {
             }
             let response = request.send().await.unwrap();
             assert_eq!(response.status(), expected);
-            assert_eq!(
-                response.headers().contains_key("x-xcss-error-code"),
-                terminal
-            );
+            assert_eq!(response.headers().contains_key("x-error-code"), terminal);
             if terminal {
-                assert_eq!(response.headers()["x-xcss-error-code"], "unauthorized");
+                assert_eq!(response.headers()["x-error-code"], "unauthorized");
             }
             if expected == StatusCode::UNAUTHORIZED {
                 let bytes = response.bytes().await.unwrap();
@@ -1343,7 +1340,7 @@ mod tests {
             .map(|value| value.to_str().unwrap().split(';').next().unwrap())
             .collect::<Vec<_>>()
             .join("; ");
-        assert!(cookie.contains("xcss-xscs-session="));
+        assert!(cookie.contains("admin-xscs-session="));
         assert!(!cookie.contains("sunshine_csrf="));
         let login_body: Value =
             serde_json::from_slice(&login.into_body().collect().await.unwrap().to_bytes()).unwrap();
@@ -1364,13 +1361,13 @@ mod tests {
         let csrf = login_body["csrf_token"].as_str().unwrap().to_string();
         assert!(!csrf.is_empty());
         let stored_hash: Vec<u8> =
-            sqlx::query_scalar("SELECT token_hash FROM _xcss_admin_sessions")
+            sqlx::query_scalar("SELECT token_hash FROM _common_admin_sessions")
                 .fetch_one(&pool)
                 .await
                 .unwrap();
         let session_token = cookie
             .split("; ")
-            .find_map(|value| value.strip_prefix("xcss-xscs-session="))
+            .find_map(|value| value.strip_prefix("admin-xscs-session="))
             .unwrap();
         assert_eq!(stored_hash.len(), 32);
         assert_eq!(

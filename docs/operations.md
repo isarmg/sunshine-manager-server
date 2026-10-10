@@ -27,9 +27,9 @@ asset 和 group/world writable 内容。
 python3 scripts/package-release.py /absolute/release-output
 ```
 
-当前 Server Rust 固定 xcss 1.0.0 / `9fb5b3f8f20762cb93050bc52ea81a36ac0dc914`；一个 @xcss/web 包
+当前 Server Rust 固定 xcss 1.0.0 / `9637806055b7d7a18be206f0b83e9b22b73902db`；一个 @xcss/web 包
 使用同版正式 Release tarball 和 lockfile integrity，不依赖相邻 xcss checkout。独立 CI 已通过，
-见[消费者矩阵](https://github.com/isarmg/xcss/blob/main/consumers/consumer-matrix.json)。
+见[本项目当前 CI](https://github.com/isarmg/xscs/actions)与[正式发行资产](https://github.com/isarmg/xscs/releases)。
 这证明当前源码的独立依赖与构建，不表示现有产品 tag 已包含随后主分支的改动；正式交付仍须使用
 与产品版本、完整源码提交一致且通过全部门禁的发行树，不得覆盖旧 tag 或资产。
 xcss 不是生产运行服务，发行树中不增加其 daemon、配置或 socket。
@@ -86,7 +86,7 @@ ASCII 小写化，然后要求持久值为 3–64 字节、首尾是字母/数�
 控制字符和其他符号均拒绝；数据库 CHECK、启动存量检查、Session DTO、账户限流键和 Web 表单使用同一
 username。不存在 `EMAIL` 环境变量、`--email` 参数、JSON `email` 字段或兼容别名。
 
-## 5. Doctor
+## 5. 诊断命令 doctor
 
 `doctor` 验证 product metadata、现场 Schema fingerprint、SQLite integrity/foreign keys、可回滚写事务，
 并验证 Manager 身份及全部持久 operation request。请求必须通过当前任务解码和密文身份校验；
@@ -123,7 +123,7 @@ LocalSystem 使用计算机信任存储。本机 Sunshine 必须使用 HTTPS 回
 ## 7. 当前数据与凭据
 
 当前数据库身份是 xscs `1.0.0`、Schema revision 1、SHA-256
-`0466872562dde0c06ef73e42e683801c21cc1d7be3488ca332a5e9a3d9c0518b`，软件版本独立由发行 identity 表达。
+`b3fdff2217ea2ba4a384e3ade29cbf87a949d63392bdff3895916ff2377bd1ba`，软件版本独立由发行 identity 表达。
 `run` 只接受完整当前状态；不能手改 metadata 或拼接数据库与密钥。Secret 泄露时隔离服务并撤销管理员会话
 和实例凭据。主 key 泄露时建立全新当前状态并重新登记实例，不能逐表复制旧密文。
 
@@ -170,3 +170,11 @@ Reporting；公开 issue 不得包含生产实例、数据库、密文、key、U
 新任务写入同样每实例最多一个、全服务最多四个非等待准入，容量检查有 3 秒 SQLite 执行预算。历史与不确定结果不自动删除。新任务的默认准入上限是每实例 100,000 条或 1 GiB 的载荷、WAL、回执与审计预算、全服务 1,000,000 条，以及 SQLite 页、WAL 和未来回执、配置快照、审计预留合计 8 GiB；磁盘另须保留 1 GiB。预留按未写报告和保留行计费，因此字节上限可能先于行数上限达到。满额返回 `history_capacity_exhausted` / 503，任务未被接受；已有记录仍可查询，幂等重试仍读取原记录，已接受任务仍可提交最终结果。不同应用共享磁盘时，其他写入仍可能消耗余量，持久化失败会被明确报告。
 
 Client 连接全服务最多 256 个、每实例最多一个；重复连接返回可重试 429，释放原连接后可以重新连接，避免单实例占满其他实例的连接名额。
+
+## 当前中立接口与旧版数据处理
+
+当前版本只使用 `.state-instance.lock`、`.state-maintenance.lock`、`.state-maintenance-pending.json` 和 `.state-atomic-` 临时文件前缀；离线升级工具采用 `.release-upgrade` 工作目录。服务身份头为 `x-service`，错误码头为 `x-error-code`，健康状态中的公共源码修订字段为 `common_revision`。管理会话采用 `__Host-admin-xscs-session`，显式开发模式采用 `admin-xscs-session`；生产 Cookie 的 Secure、HttpOnly、SameSite、Path 和 CSRF 约束继续生效。资源清单格式为 `web-assets-v1`，公共数据库内部表及索引采用 `_common_` 前缀。
+
+这些接口没有旧名称别名或旧版兼容分支。旧版升级前，先按本文的停服步骤停止服务、配套客户端及全部维护工具；确认全部进程退出后，完整备份配置、SQLite 数据库及其 WAL/SHM、业务文件和必要的私有凭据。备份包含敏感数据，应保留原有访问权限并离线保存。
+
+保留旧数据目录，按当前安装步骤配置新的私有数据目录，执行显式 `init` 初始化，随后运行 `config validate`，再启动服务、登录管理页面并重新配对客户端。旧配置应人工审阅后填写当前字段，不能整体覆盖新目录。旧业务数据需要另行处理；当前版本不提供自动迁移。不得让旧、新版本同时写同一目录，不得通过删锁文件或修改数据库 metadata 强制启动；当前结构指纹包含实际表名、索引名和 SQL，仅改名称不能证明数据符合当前合同。

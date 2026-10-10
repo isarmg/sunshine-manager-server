@@ -17,7 +17,7 @@ pub const APPLICATION_VERSION: &str = env!("CARGO_PKG_VERSION");
 // Persisted schema identity changes only with a data-format migration.
 const SCHEMA_APPLICATION_VERSION: &str = "1.0.0";
 pub const SCHEMA_REVISION: i64 = 1;
-pub const SCHEMA_SHA256: &str = "0466872562dde0c06ef73e42e683801c21cc1d7be3488ca332a5e9a3d9c0518b";
+pub const SCHEMA_SHA256: &str = "b3fdff2217ea2ba4a384e3ade29cbf87a949d63392bdff3895916ff2377bd1ba";
 
 const CURRENT_SCHEMA_SQL: &str = include_str!("../../../schema/generated/current_schema.sql");
 

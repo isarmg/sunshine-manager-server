@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "api_prefix": "/api/v1",
   "schema_revision": 1,
-  "schema_sha256": "0466872562dde0c06ef73e42e683801c21cc1d7be3488ca332a5e9a3d9c0518b",
+  "schema_sha256": "b3fdff2217ea2ba4a384e3ade29cbf87a949d63392bdff3895916ff2377bd1ba",
   "target": "x86_64-unknown-linux-gnu"
 }

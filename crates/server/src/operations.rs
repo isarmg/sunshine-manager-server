@@ -65,7 +65,7 @@ async fn check_history_capacity(
     limits: HistoryCapacity,
 ) -> AppResult<()> {
     let existing: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM _xcss_operations WHERE namespace=? AND idempotency_digest=?)",
+        "SELECT EXISTS(SELECT 1 FROM _common_operations WHERE namespace=? AND idempotency_digest=?)",
     )
     .bind(&value.namespace)
     .bind(value.idempotency_digest.as_slice())
@@ -80,7 +80,7 @@ async fn check_history_capacity(
          COALESCE(SUM((op.result_payload IS NULL)+(obs.operation_id IS NULL)),0), \
          COALESCE(SUM(CASE WHEN op.target_key=? THEN (op.result_payload IS NULL)+(obs.operation_id IS NULL) ELSE 0 END),0), \
          COALESCE(SUM(CASE WHEN op.target_key=? THEN length(op.request_payload)+COALESCE(length(op.result_payload),0)+COALESCE(length(CAST(obs.report_json AS BLOB)),0)+16384 ELSE 0 END),0) \
-         FROM _xcss_operations op LEFT JOIN client_observations obs ON obs.operation_id=op.operation_id")
+         FROM _common_operations op LEFT JOIN client_observations obs ON obs.operation_id=op.operation_id")
         .bind(&value.target_key).bind(&value.target_key).bind(&value.target_key).fetch_one(&mut **tx).await?;
     if total >= limits.total_rows || device >= limits.device_rows {
         return Err(AppError::HistoryCapacity);
@@ -754,7 +754,7 @@ impl OperationManager {
                 other => internal(other),
             })?;
         if resource(&task.command) == "write" && matches!(&stored, EnqueueOutcome::Created(_)) {
-            let uncertain: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _xcss_operations WHERE target_key=? AND namespace LIKE '%.write' AND state='unknown')")
+            let uncertain: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _common_operations WHERE target_key=? AND namespace LIKE '%.write' AND state='unknown')")
                 .bind(id).fetch_one(&mut *tx).await?;
             if uncertain {
                 return Err(AppError::Conflict(
@@ -867,7 +867,7 @@ impl OperationManager {
               OR length(CAST(op.action AS BLOB))>128 OR length(CAST(op.state AS BLOB))>128 \
               OR COALESCE(length(CAST(op.resolution_code AS BLOB)),0)>128 \
               OR COALESCE(length(CAST(op.error_code AS BLOB)),0)>128) AS oversized_text \
-             FROM _xcss_operations AS op \
+             FROM _common_operations AS op \
              LEFT JOIN client_observations AS obs ON obs.operation_id=op.operation_id";
         let time_filter = if range.is_some() {
             "AND op.created_at_micros>=? AND op.created_at_micros<?"
@@ -960,7 +960,7 @@ impl OperationManager {
 
     pub async fn summary_for_device(&self, device: &str) -> AppResult<OperationSummary> {
         let blocking_count = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM _xcss_operations WHERE target_key=? \
+            "SELECT COUNT(*) FROM _common_operations WHERE target_key=? \
              AND namespace LIKE '%.write' AND state IN ('pending','running','unknown')",
         )
         .bind(device)
@@ -975,12 +975,13 @@ impl OperationManager {
         resolution: xcss::operations::Resolution,
     ) -> AppResult<OperationView> {
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        let bytes: Vec<u8> =
-            sqlx::query_scalar("SELECT request_payload FROM _xcss_operations WHERE operation_id=?")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?
-                .ok_or_else(|| AppError::NotFound("任务不存在".into()))?;
+        let bytes: Vec<u8> = sqlx::query_scalar(
+            "SELECT request_payload FROM _common_operations WHERE operation_id=?",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("任务不存在".into()))?;
         if serde_json::from_slice::<Payload>(&bytes)
             .map_err(internal)?
             .actor
@@ -1008,7 +1009,7 @@ impl OperationManager {
     pub async fn recover_startup(&self) -> AppResult<u64> {
         sqlx::query("UPDATE devices SET session_id=NULL,last_seen_at_micros=NULL,health_at_micros=NULL,sunshine_reachable=NULL").execute(&self.pool).await?;
         let spaces: Vec<String> =
-            sqlx::query_scalar("SELECT DISTINCT namespace FROM _xcss_operations")
+            sqlx::query_scalar("SELECT DISTINCT namespace FROM _common_operations")
                 .fetch_all(&self.pool)
                 .await?;
         let mut count = 0;
@@ -1025,7 +1026,7 @@ impl OperationManager {
         loop {
             let now = db::now_micros()?;
             // Avoid a SQLite write lock for idle devices. Authorization is rechecked in the claim.
-            let eligible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _xcss_operations WHERE target_key=? AND state='pending' AND not_before_micros<=?)")
+            let eligible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _common_operations WHERE target_key=? AND state='pending' AND not_before_micros<=?)")
                 .bind(device).bind(now).fetch_one(&self.pool).await?;
             if !eligible {
                 return Ok(None);
@@ -1037,7 +1038,7 @@ impl OperationManager {
                 .bind(device).bind(owner).fetch_optional(&mut *tx).await?.ok_or(AppError::Unauthorized)?;
             let installation = Uuid::parse_str(&installation).map_err(internal)?;
             let already_running: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM _xcss_operations WHERE target_key=? AND state='running')",
+                "SELECT EXISTS(SELECT 1 FROM _common_operations WHERE target_key=? AND state='running')",
             )
             .bind(device)
             .fetch_one(&mut *tx)
@@ -1047,7 +1048,7 @@ impl OperationManager {
                 return Ok(None);
             }
             // Oldest eligible task wins. An unresolved write blocks later writes, not reads.
-            let candidate: Option<String> = sqlx::query_scalar("SELECT namespace FROM _xcss_operations WHERE target_key=? AND state='pending' AND not_before_micros<=? AND namespace IN (?,?) AND (namespace LIKE '%.read' OR NOT EXISTS(SELECT 1 FROM _xcss_operations WHERE target_key=? AND namespace LIKE '%.write' AND state='unknown')) ORDER BY created_at_micros,operation_id LIMIT 1")
+            let candidate: Option<String> = sqlx::query_scalar("SELECT namespace FROM _common_operations WHERE target_key=? AND state='pending' AND not_before_micros<=? AND namespace IN (?,?) AND (namespace LIKE '%.read' OR NOT EXISTS(SELECT 1 FROM _common_operations WHERE target_key=? AND namespace LIKE '%.write' AND state='unknown')) ORDER BY created_at_micros,operation_id LIMIT 1")
                 .bind(device).bind(now).bind(namespace(device, &installation, "read")).bind(namespace(device, &installation, "write")).bind(device).fetch_optional(&mut *tx).await?;
             let claimed = match candidate {
                 Some(candidate) => SqliteOperationStore::claim_next_in(
@@ -1095,7 +1096,7 @@ impl OperationManager {
         device: &str,
         installation: &Uuid,
     ) -> AppResult<Option<StoredOperation>> {
-        let id:Option<String>=sqlx::query_scalar("SELECT operation_id FROM _xcss_operations WHERE namespace=? AND state='unknown' AND NOT EXISTS(SELECT 1 FROM client_observations WHERE client_observations.operation_id=_xcss_operations.operation_id AND json_extract(report_json,'$.kind')!='unknown') ORDER BY created_at_micros LIMIT 1").bind(namespace(device, installation, "write")).fetch_optional(&self.pool).await?;
+        let id:Option<String>=sqlx::query_scalar("SELECT operation_id FROM _common_operations WHERE namespace=? AND state='unknown' AND NOT EXISTS(SELECT 1 FROM client_observations WHERE client_observations.operation_id=_common_operations.operation_id AND json_extract(report_json,'$.kind')!='unknown') ORDER BY created_at_micros LIMIT 1").bind(namespace(device, installation, "write")).fetch_optional(&self.pool).await?;
         match id {
             Some(id) => self.store.get(&id).await.map_err(internal),
             None => Ok(None),
@@ -1146,7 +1147,7 @@ impl OperationManager {
         if stored.operation.state == OperationState::Unknown {
             // Evidence only: never forge a human xcss resolution.
             let state: String =
-                sqlx::query_scalar("SELECT state FROM _xcss_operations WHERE operation_id=?")
+                sqlx::query_scalar("SELECT state FROM _common_operations WHERE operation_id=?")
                     .bind(&stored.operation.operation_id)
                     .fetch_one(&mut *tx)
                     .await?;
@@ -1270,7 +1271,7 @@ impl OperationManager {
                 .await
                 .map_err(|_| "operation audit unavailable".to_owned())?;
             let spaces: Vec<String> = sqlx::query_scalar(
-                "SELECT DISTINCT namespace FROM _xcss_operations WHERE state='running'",
+                "SELECT DISTINCT namespace FROM _common_operations WHERE state='running'",
             )
             .fetch_all(&self.pool)
             .await
@@ -1405,7 +1406,7 @@ mod capacity_tests {
                 .await
                 .is_ok()
         );
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _xcss_operations")
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _common_operations")
             .fetch_one(&manager.pool)
             .await
             .unwrap();
@@ -1555,7 +1556,7 @@ mod capacity_tests {
                 .state,
             OperationState::Pending
         );
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _xcss_operations")
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _common_operations")
             .fetch_one(&manager.pool)
             .await
             .unwrap();
