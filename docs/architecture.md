@@ -1,47 +1,29 @@
-# 工程组织与责任边界
+# xscs 实现概览
 
-此页描述 1.0.0 发行候选。正式发行身份由精准 Source 的 CI 与 Release 资产证明。
+xscs 将业务服务和管理 Web 放在一个 Linux AMD64 GNU 可执行程序中，以单个 SQLite 数据库保存状态。xscc 在受管主机独立运行，协议类型由本仓库维护。
 
-## 目录约定
+## 从哪里读源码
 
-根 `Cargo.toml` 是多包 workspace；所有依赖版本与 Rust lint 在根声明。`crates/server/` 保存 Server 源码、构建入口和业务测试；`crates/protocol/` 保存 `xscs-protocol` 唯一业务协议源码。内部包继承 workspace 依赖和 `unsafe_code = "forbid"`，不各自维护公共版本。
+| 目录 | 职责 |
+|---|---|
+| `crates/protocol/` | 通信、任务、配置字段与结果类型 |
+| `crates/server/src/` | HTTP、配置、操作调度、持久化和秘密上下文 |
+| `crates/server/tests/` | 路由、存储、认证、并发与发行行为测试 |
+| `schema/` | 当前 DDL 与生成的结构定义 |
+| `web/src/` | 产品页面、API 调用与响应校验 |
+| `scripts/` | 本地启动、构建、检查和打包 |
+| `deploy/` | systemd及设备反向代理示例 |
 
-`web/` 保存管理界面；`config/` 保存示例；`schema/` 保存当前 DDL 和生成定义；`scripts/` 保存构建、检查与打包；`deploy/` 保存运行环境与服务示例；`docs/` 保存设计、任务说明和发行记录。仅根目录管理 `Cargo.lock`。同类目录保持相同职责，不按产品名或语言重新命名；目录迁移必须同时校验包含路径、CI 与实际归档来源。
+根 Cargo.toml 统一 workspace 依赖和 lint，Cargo.lock 锁定依赖图。公共配置、认证、日志、SQLite 和生命周期使用 xcss；管理页面使用单个 @xcss/web 包。产品继续维护自己的业务模型和持久条件，见[公共库](common-support.md)。
 
-## 模块与定义来源
+## 一条请求经过什么
 
-领域按 config / lifecycle / HTTP / operations / persistence 划分。`http.rs` 负责管理员与设备通道，`operations.rs` 负责业务指令、幂等、超时、未知结果和恢复，`db.rs` 负责持久数据，`crypto.rs` 负责产品秘密上下文。 `main.rs` 组合配置、初始化、运行与停止；入口不重新实现 xcss 机制。
+浏览器通过 Session/CSRF 提交任务，Server 持久化后派发给 Client。Client 在副作用前保存执行意图、完成后保存结果；Server 收存结果再确认。WSS 断开后双方以持久事实继续，而非从页面状态推断结果。
 
-软件身份来自 Cargo，发行配置须与其一致；业务协议来自 `crates/protocol/`，当前 DDL 来自 `schema/`。当前 Schema revision/指纹为 1、`b3fdff2217ea2ba4a384e3ade29cbf87a949d63392bdff3895916ff2377bd1ba`，此次保持不变。Rust 与 Web xcss 使用已发布的完整 Git revision、精确版本或具备完整性摘要的发行包，不依赖同级源码作为正式构建输入。候选 xcss 联调只能作为明确记录的临时覆盖，不能伪装成已发布依赖。
+通信身份为 xscs-management/1，WebSocket 子协议为 xscs-management.v1；持久业务任务身份为 xscs-task/1。任务指纹涵盖协议、实例绑定、权限和命令，通信能力由 Client Hello 声明。详见[通信可靠性](communication-reliability.md)。
 
-## 运行与安全边界
+## 状态与资源
 
-正式目标保持 `x86_64-unknown-linux-gnu`；其他目标的 Server 构建明确拒绝。业务代码及必要管理 Web 嵌入单个可执行程序，TLS 入口、权限和环境依赖见部署文档。
+`init` 创建私有数据库与首个管理员；`run` 验证当前结构后运行。配置校验使用独立只读快照，doctor 与密码维护在停服窗口取得排他维护锁。正式发行通过 manifest 绑定源码、二进制、资源和权限。
 
-公共配置、CLI、日志、认证、运行生命周期、SQLite 和安全状态文件来自 xcss；产品维护实例归属、权限语义、业务持久条件及资源上限。`init` 显式创建空的私有状态；`run` 严格验证现有状态；`config validate` 使用只读验证快照；运行和独占维护使用共同目录锁。未满足当前契约时不得重建或猜测修复。
-
-## 验证与支持限制
-
-发行必须使用锁定工具链与 Cargo/npm 锁、明确源码 revision，并运行格式、静态检查、相关风险测试及最终归档验收。当前开发环境是 macOS ARM64；协议测试和管理 Web 测试不能代替 Linux Server 运行与发行物验收。测试夹具不能代替真实主机或设备。实际执行结果见本次候选发行说明；正式完成状态以精准 Source 的远端 CI、Release 和最终制品验收分别证明。
-
-Rust 固定 [官方当前稳定版 1.99.0](https://blog.rust-lang.org/releases/)，不为制造升级而切换到预发行工具链。依赖最低版本与锁均更新到当前合适稳定线；SQLx 0.9.0、Tokio 1.53.2、Axum 0.8.9 保持已有当前主线，重新解析的传递依赖记录在根 Cargo.lock 中。unsafe 结论见 [审查记录](unsafe-audit.md)。
-
-## 通信身份与持久业务身份
-
-当前通信合同为 `xscs-management/1`，WebSocket token 为 `xscs-management.v1`，Client 路由为 `/xscc/v1/`；只接受这一通信合同。`configuration_overwrite` 和 `pending_pairing_listing` 是必填布尔能力；配置保存、待配对查询按实际声明能力及相应授权校验，Client 发布版本仅供诊断。
-
-当前业务 Task 合同为 `TASK_PROTOCOL = xscs-task/1`，它与通信身份分别定义，不选择历史分支。指纹涵盖协议名称、实例绑定、权限和命令；同一任务合同内的通信能力更新不改变该指纹。本次命名重置改变了协议名称，旧合同的任务、副作用意图和回执不能直接视为当前记录；须用兼容版本核对并归档旧证据，再按 1.0.0 部署说明新建安装和配对。
-
-持久观察必须满足当前结构，非法能力或配置不能静默显示为“尚无数据”。从之前发行升级时，需要在明确离线维护并完成一致备份后，使上次通信能力和连接/健康观察失效；业务任务、授权、配置观察、审计和执行证据保留，由当前 Client 重新声明真实能力。Server 本身不执行历史转换。
-
-## 统一规范适用验收
-
-| 条款 | 实现与证据 | 验证边界 |
-|---|---|---|
-| 二～五：职责、方向、目录与权威来源 | 根 workspace 统一依赖/lint；`crates/server` 与 `crates/protocol` 单向依赖；xcss 使用完整 Git revision；配置、DDL、protocol 各有唯一来源 | 保持既有规范目录，没有随意重命名或迁移 |
-| 六～九：错误、当前契约、授权、配置/CLI | xcss 类型化错误、request ID、Session/CSRF；业务入口验证归属/许可；`init` 与 `run` 分离，config 子命令共享解析与结构校验 | 既有 CLI/权限/拒绝坏输入测试在 Linux CI 运行；跨编译不能代替运行 |
-| 十～十二：交付、生命周期、状态/文件 | `build.rs` 从受控 Web manifest 嵌入资源；打包脚本验证单二进制及 Source/资产身份；runtime 锁、当前 schema/数据、密钥和实际文件身份检查 | release 工具离线测试已执行；最终 Linux 安装、systemd 和实际恢复需发行验收 |
-| 十三～十五：任务、上限、日志/实例 | 业务操作区分接收、提交与观察；当前任务/上传恢复不猜测历史；分页/响应预算、队列或上传额度控制资源；xcss 文件日志与产品实例事件共同关联 request ID | 本次相关协议/分页/能力回归见发行说明；真实网络和设备不能由夹具代替 |
-| 十六：界面一致性 | 共享 Shell/UI、内存会话、正确空/错误/等待状态；能力和权限最终由 Server 执行；嵌入 UI 与 Server 同批发行 | Chromium/Firefox 行为、布局与 WCAG 自动检查；不是实际设备验证 |
-| 十七：摄像头适配 | 本产品没有摄像头适配职责 | 不适用，不创建产品无关分支 |
-| 十九～二十五：依赖、CI、测试、文档与交付 | Rust 1.99.0 当前稳定线、真实 Cargo/npm 锁、不可变来源和全目标 CI；`docs/unsafe-audit.md` 记录产品边界；发行工具作为独立职责，业务 Server 不包含其实现或专用集成 | 本地协议、Web、release-tool 检查与 Linux 静态编译分别记录；以精准提交 CI 和最终资产决定是否可发布 |
+构建、测试、发行步骤及验证范围见[开发指南](development.md)。Rust 原生接口结论见[unsafe 审查](unsafe-audit.md)。

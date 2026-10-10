@@ -1,10 +1,7 @@
-# 05. 持久任务与恢复
+# 05. 理解持久化与断线
 
-配置读取、修改和重启都先成为 SQLite operation。`Idempotency-Key` 只能幂等同一 actor、设备、action 和
-请求；同 key 不同内容返回冲突。请求在库中加密并绑定 operation ID/action AAD。
+Client 在副作用前保存意图，执行后持久结果；Server 收存后确认。WSS 断开不取消已开始的执行。unknown 表示效果未确认。
 
-任务按设备串行。pending 等待在线 Client，running 已交付，succeeded/failed 有明确证据，unknown 表示
-副作用结果无法证明。Server 重启或 WSS 在执行边界断开时不能自动重试副作用。
+读[通信可靠性](../communication-reliability.md)，用协议夹具分别测试接收前断线、执行后回执丢失。
 
-unknown 重连后以 inspect-only 询问 Client 的持久执行日志。Client 只能报告证据，不能执行命令。管理员
-核对真实 Sunshine 后记录人工结论；resolve 不会重放原任务。
+[学习路线](README.md) · [文档首页](../README.md)

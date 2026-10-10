@@ -1,13 +1,7 @@
-# 08. 测试、调试与变更
+# 08. 运行测试与定位问题
 
-按边界测试，而不只测成功路径：
+先运行[开发指南](../development.md)的格式、Clippy、Rust 与 Web 检查。定位问题时按输入、认证、业务处理、持久状态、页面显示逐层核对。
 
-1. protocol 的 unknown fields、大小、binding、permission、revision 和字段越界；
-2. 实例授权码加密/查看/轮换、取消后删除、注册、撤销与事务审计；
-3. Client ingress、WSS subprotocol/并发、Hello、心跳、session 替换和超时；
-4. operation 幂等、串行、断线 unknown、inspect-only 和人工 resolve；
-5. Web 实例列表、详情、日志、配置预览、授权码和直接语言切换；
-6. xcss revision 从 Cargo.lock 派生、release 全树校验和 workflow 权限。
+新增测试覆盖成功、失败和中断后的状态；使用临时目录与协议夹具保存可重复输入。真实设备测试独立记录。
 
-变更协议时应先改 `crates/protocol/`，随后 Server、独立 Client、Web validator、文档和 Release identity；当前
-项目不保留旧字段或路由兼容。
+[学习路线](README.md) · [文档首页](../README.md)

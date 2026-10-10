@@ -1,49 +1,21 @@
-# xscs 当前项目流程
+# xscs 端到端流程
 
-## 1. 端到端链路
+## 部署到首次使用
 
-```text
-管理员浏览器 -> HTTPS ingress -> Server 管理 API -> SQLite operation
-                                                    -> WSS Client
-                                                    -> 本机 Sunshine HTTPS
-Client heartbeat/result -> WSS -> Server -> SQLite -> Web 列表/详情/日志
-```
+1. 在 Linux AMD64 GNU 安装发行树，准备私有配置和数据目录。
+2. 显式 init 创建管理员与数据库，再由 systemd 启动服务。
+3. 检查 ready，通过 HTTPS 登录管理台。
+4. 创建实例，在主机安装 xscc 并运行 setup。
+5. 读取 Sunshine 配置，确认任务往返成功。
 
-Server 只监听 loopback，不直接访问 Sunshine。Client 与 Sunshine 同机运行并拥有 Sunshine 凭据；本机连接
-限于 HTTPS 回环 IP，证书身份不校验。Server 只保存 Client 实例身份、长期授权码、credential 摘要、配置投影和任务证据。
+实际命令见[安装](operations.md)、[实例管理](instance-management.md)和[使用指南](usage.md)。
 
-## 2. 实例生命周期
+## 正常运行
 
-1. 管理员创建实例，Server 生成并加密保存 36 位小写英文字母数字长期授权码。
-2. Client 用 Server origin 和授权码解析 manager/device identity，再提交 installation ID 与随机 credential。
-3. Client 通过 WSS 发送绑定、能力和 Sunshine 版本，随后心跳回报可达性及白名单配置快照。
-4. 管理员可查看或更换授权码；更换会清除旧绑定和 credential，Client 必须重新配对。
-5. 未注册实例先取消 pending 配对，再执行一次删除；已注册实例只能永久撤销 credential。
+浏览器提交 → Server 持久任务 → Client WSS 接收 → 本地持久意图 → Sunshine API / 固定服务适配器 → 本地持久结果 → Server 收存 → 确认并压缩去重记录。
 
-## 3. 管理操作生命周期
+202 表示任务已接受。最终状态反映执行结果；unknown 保留效果未确认的事实，管理员核对设备后记录结论。写任务创建后 15 分钟内允许派发，页面退出不取消已接受任务。
 
-管理写入需要 Session、CSRF、同源验证和 `Idempotency-Key`。Server 先验证当前协议并加密持久化 request，
-再由 operation 管理器按设备领取。WSS 每设备只保留一个正在处理的任务；当前领域包括配置、应用、
-Moonlight 配对、日志/诊断、显示/输入维护和固定服务控制。Web 配置保存采用 `SaveConfig` 完整覆盖当前
-可管理字段，不带修订前置条件；独立 `PatchConfig` API 继续提供按完整修订的条件更新。
+## 维护与开发
 
-Client 执行前再次校验 binding、permission、命令要求的修订、字段白名单和 operation 去重日志。连接中断后 Client 保留正在执行的任务并补交持久结果；写入
-结果不可证明时进入 unknown；重连后的 inspect-only 只能读取证据，不能重复副作用。管理员核对本机实际
-状态后记录人工 resolution。
-
-## 4. 开发顺序
-
-1. 先修改 `crates/protocol/` 的严格类型、校验和协议测试。
-2. 修改 `crates/server/src/http.rs` 路由及 `crates/server/src/db.rs`/`crates/server/src/operations.rs` 的事务和恢复语义。
-3. 同步独立 Client，分别验证远程 Manager 的证书链/主机名、本机 Sunshine 的回环 HTTPS 策略、配置文件和重启边界。
-4. 修改 Web 的实例列表、详情、日志及 API runtime validator。
-5. 同步 Schema/release identity、配置模板、文档和供应链门禁。
-6. 运行完整 CI 后才创建 annotated tag；产品不保留旧 route/field/schema fallback。
-
-## 5. 发布边界
-
-Server 仅发布 Linux AMD64 binary 与 Web。build.rs 从 `Cargo.lock` 自动派生唯一 xcss revision；正式
-binary 还绑定源码 revision、Schema revision 1 和 Web 资产。Release 树需通过自校验和篡改负例。
-
-
-当前通信合同与回归场景见[通信与执行恢复](communication-reliability.md)。
+日常先查看服务、日志与业务时间，再按具体错误定位。写入维护前停止服务，配置校验可并行执行。修改协议时同时更新类型、生产者、消费者和测试；运行[开发检查](development.md)后核对最终制品。
