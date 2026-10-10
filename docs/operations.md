@@ -27,7 +27,7 @@ asset 和 group/world writable 内容。
 python3 scripts/package-release.py /absolute/release-output
 ```
 
-当前 Server Rust 固定 xcss 1.0.0 / `9637806055b7d7a18be206f0b83e9b22b73902db`；一个 @xcss/web 包
+当前 Server Rust 固定 xcss 1.0.0 / `627d988a4ed471469ed4fdce8af0ea6b5c131ce6`；一个 @xcss/web 包
 使用同版正式 Release tarball 和 lockfile integrity，不依赖相邻 xcss checkout。独立 CI 已通过，
 见[本项目当前 CI](https://github.com/isarmg/xscs/actions)与[正式发行资产](https://github.com/isarmg/xscs/releases)。
 这证明当前源码的独立依赖与构建，不表示现有产品 tag 已包含随后主分支的改动；正式交付仍须使用

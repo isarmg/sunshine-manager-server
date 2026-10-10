@@ -291,7 +291,7 @@ pub struct OperationSummary {
 
 fn server_timestamp(micros: i64) -> AppResult<String> {
     let utc = DateTime::<Utc>::from_timestamp_micros(micros)
-        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("任务创建时间无效")))?;
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("invalid task creation timestamp")))?;
     Ok(utc
         .with_timezone(&Local)
         .format("%Y-%m-%d %H:%M:%S%.6f %:z")
