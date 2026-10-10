@@ -1094,7 +1094,14 @@ fn validate_paired_clients(snapshot: &PairedClientsSnapshot) -> Result<(), Inval
     let mut ids = BTreeSet::new();
     for client in &snapshot.clients {
         validate_uuid(&client.uuid)?;
-        validate_text(&client.name, 1, 128)?;
+        // Sunshine preserves paired-client display names, including surrounding spaces.
+        // Actions address the UUID; keep the original name and snapshot revision intact.
+        if client.name.is_empty()
+            || client.name.len() > 128
+            || client.name.chars().any(char::is_control)
+        {
+            return Err(InvalidTask);
+        }
         if !ids.insert(&client.uuid) {
             return Err(InvalidTask);
         }
