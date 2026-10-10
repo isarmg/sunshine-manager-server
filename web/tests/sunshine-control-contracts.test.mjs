@@ -99,3 +99,36 @@ test('administrator DTO checks the additive evidence timestamp without treating 
  assert.equal(isOperation(operation),true);assert.equal(isOperation({...operation,reconciliation_observed_at_micros:20}),true);
  for(const value of ['20',NaN,Infinity,Number.MAX_SAFE_INTEGER+1,{},[]])assert.equal(isOperation({...operation,reconciliation_observed_at_micros:value}),false);
 });
+
+test('new applications use Sunshine launch defaults and existing explicit false values survive editing',()=>{
+ const f=fixture();f.button('New application').props.onClick();
+ assert.equal(f.editor().props.application['auto-detach'],true);
+ assert.equal(f.editor().props.application['wait-all'],true);
+ f.editor().props.onCancel();f.button('Edit').props.onClick();
+ assert.equal(f.editor().props.application['auto-detach'],false);
+ assert.equal(f.editor().props.application['wait-all'],false);
+});
+
+test('a reconciled successful save adopts its application reference after manual resolution',async()=>{
+ const f=fixture();f.button('Edit').props.onClick();f.editor().props.setApplication({...spec,name:'Reconciled save'});await f.save();
+ const snapshot={revision:'c'.repeat(64),applications:[{reference:ref('d'),specification:structuredClone(f.commands[0].application)}]};
+ const uncertain={operation_id:'save-1',state:'unknown',updated_at_micros:100,result:{kind:'unknown',reason:'effect_not_confirmed'},reconciliation:{kind:'application_saved',snapshot},reconciliation_observed_at_micros:110,resolution:null};
+ f.update([uncertain]);assert.equal(f.editor().props.blocked,true);
+ f.editor().props.setApplication({...f.editor().props.application,name:'Later draft'});
+ f.update([{...uncertain,state:'resolved',updated_at_micros:120,resolution:'confirmed_succeeded'}]);
+ assert.equal(f.editor().props.application.name,'Later draft');assert.equal(f.editor().props.blocked,false);
+ await f.save();assert.deepEqual(f.commands[1].target,ref('d'));assert.equal(f.commands[1].expected_revision,'c'.repeat(64));
+});
+
+test('manual failed resolution does not adopt a reconciliation reference',async()=>{
+ const f=fixture();f.button('Edit').props.onClick();f.editor().props.setApplication({...spec,name:'Retry original target'});await f.save();
+ f.update([{operation_id:'save-1',state:'resolved',updated_at_micros:120,result:{kind:'unknown'},reconciliation:{kind:'application_saved',snapshot:{revision:'c'.repeat(64),applications:[{reference:ref('d'),specification:structuredClone(f.commands[0].application)}]}},reconciliation_observed_at_micros:110,resolution:'confirmed_failed'}]);
+ await f.save();assert.deepEqual(f.commands[1].target,ref('b'));
+});
+
+test('reconciled creation becomes an edit instead of repeating creation',async()=>{
+ const f=fixture();f.button('New application').props.onClick();f.editor().props.setApplication({...f.editor().props.application,name:'Created after inspection'});await f.save();
+ assert.equal(f.commands[0].application['auto-detach'],true);assert.equal(f.commands[0].application['wait-all'],true);
+ f.update([{operation_id:'save-1',state:'resolved',updated_at_micros:120,result:{kind:'unknown'},reconciliation:{kind:'application_saved',snapshot:{revision:'c'.repeat(64),applications:[{reference:ref('d'),specification:structuredClone(f.commands[0].application)}]}},reconciliation_observed_at_micros:110,resolution:'confirmed_succeeded'}]);
+ assert.equal(f.editor().props.editing,true);await f.save();assert.deepEqual(f.commands[1].target,ref('d'));
+});

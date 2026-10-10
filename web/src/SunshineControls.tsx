@@ -16,7 +16,7 @@ type SunshineControlSection=SunshineManagementCategory|"service"|"moonlight";
 export function isSunshineManagementCategory(value:string):value is SunshineManagementCategory{return sunshineManagementCategories.some(category=>category.id===value)}
 type Props={device:DeviceInfo;operations:Operation[];busy:boolean;blocked:boolean;section:SunshineControlSection|null;submit(command:Command,onAccepted?:(operation:Operation)=>void):Promise<boolean>;confirm(value:Confirm):void};
 
-const emptyApplication:ApplicationSpec={name:"",output:"",cmd:"","working-dir":"","exclude-global-prep-cmd":false,elevated:false,"auto-detach":false,"wait-all":false,"exit-timeout":5,"prep-cmd":[],detached:[],"image-path":""};
+const emptyApplication:ApplicationSpec={name:"",output:"",cmd:"","working-dir":"","exclude-global-prep-cmd":false,elevated:false,"auto-detach":true,"wait-all":true,"exit-timeout":5,"prep-cmd":[],detached:[],"image-path":""};
 function latestOf(operations:Operation[],kinds:string[]):Report|undefined{
  let latest:{time:number;report:Report}|undefined;
  for(const operation of operations){
@@ -113,18 +113,19 @@ export function SunshineControls({device,operations,busy,blocked,section,submit,
  const editorGeneration=useRef(0);const submitting=useRef(false);
  const[submission,setSubmission]=useState<{operation:Operation;application:ApplicationSpec;generation:number}|null>(null);
  const submittedOperation=submission&&(operations.find(operation=>operation.operation_id===submission.operation.operation_id&&operation.updated_at_micros>=submission.operation.updated_at_micros)??submission.operation);
+ const savedApplicationReport=submittedOperation?.state==="succeeded"?submittedOperation.result:submittedOperation?.state==="resolved"&&submittedOperation.resolution==="confirmed_succeeded"?submittedOperation.reconciliation:undefined;
  // Keep submit disabled through the success render until its new target is adopted.
- const applicationPending=!!submittedOperation&&["pending","running","unknown","succeeded"].includes(submittedOperation.state);
+ const applicationPending=!!submittedOperation&&(["pending","running","unknown","succeeded"].includes(submittedOperation.state)||savedApplicationReport?.kind==="application_saved");
  useEffect(()=>{
   if(!submission||!submittedOperation||submission.generation!==editorGeneration.current)return;
-  if(submittedOperation.state!=="succeeded"||submittedOperation.result?.kind!=="application_saved")return;
-  const snapshot=applications(submittedOperation.result);
+  if(savedApplicationReport?.kind!=="application_saved")return;
+  const snapshot=applications(savedApplicationReport);
   const matches=snapshot?.applications.filter(value=>applicationIdentity(value.specification)===applicationIdentity(submission.application));
   if(matches?.length!==1)return;
   // Rebase the identity only. Text edited while execution was pending belongs
   // to the user and must survive this earlier save's completion.
   setEditing(matches[0].reference);setSubmission(null);
- },[submission,submittedOperation]);
+ },[submission,submittedOperation,savedApplicationReport]);
  function edit(reference:ApplicationRef|null){editorGeneration.current+=1;setSubmission(null);const value=reference?appSnapshot?.applications.find(value=>value.reference.fingerprint===reference.fingerprint)?.specification??emptyApplication:emptyApplication;setEditing(reference);setApplication(value);setDetachedText(value.detached.join("\n"))}
  function cancelApplication(){editorGeneration.current+=1;setSubmission(null);setEditing(undefined)}
  async function saveApplication(event:FormEvent<HTMLFormElement>){
