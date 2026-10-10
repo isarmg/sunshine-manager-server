@@ -6,8 +6,8 @@ use std::{
 
 use anyhow::{Context, ensure};
 use sqlx::{Connection, SqliteConnection, SqlitePool, sqlite::SqliteConnectOptions};
-use xcss_schema_identity::SchemaIdentity;
-use xcss_sqlite::PoolOptions;
+use xcss::schema_identity::SchemaIdentity;
+use xcss::sqlite::PoolOptions;
 
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
@@ -112,7 +112,7 @@ fn fail_initialization<T>(path: &Path, error: anyhow::Error) -> anyhow::Result<T
 }
 
 async fn checkpoint_and_sync(pool: &SqlitePool, path: &Path) -> anyhow::Result<()> {
-    xcss_sqlite::checkpoint(pool)
+    xcss::sqlite::checkpoint(pool)
         .await
         .context("checkpoint initialized xscs schema")?;
     sync_file_and_parent(path)
@@ -123,7 +123,7 @@ async fn open_pool(path: &Path) -> anyhow::Result<SqlitePool> {
         .with_min_connections(1)
         .with_acquire_timeout(Duration::from_secs(10))
         .with_connection_limits(connection_limits());
-    Ok(xcss_sqlite::open_existing(path, options).await?)
+    Ok(xcss::sqlite::open_existing(path, options).await?)
 }
 
 /// Initialize one completely empty SQLite database with the exact current
@@ -150,13 +150,13 @@ pub async fn initialize_empty(pool: &SqlitePool) -> anyhow::Result<()> {
             .duration_since(std::time::UNIX_EPOCH)?
             .as_micros(),
     )?;
-    xcss_platform_db::initialize_current_platform_metadata(
+    xcss::platform_db::initialize_current_platform_metadata(
         &mut transaction,
         "server-control-plane",
         created_at_micros,
     )
     .await?;
-    let actual = xcss_sqlite::schema_fingerprint(&mut *transaction).await?;
+    let actual = xcss::sqlite::schema_fingerprint(&mut *transaction).await?;
     ensure!(
         actual == SCHEMA_SHA256,
         "compiled current schema fingerprint mismatch: expected {SCHEMA_SHA256}, computed {actual}"
@@ -177,10 +177,10 @@ pub async fn initialize_empty(pool: &SqlitePool) -> anyhow::Result<()> {
 }
 
 pub async fn validate_pool(pool: &SqlitePool) -> anyhow::Result<()> {
-    xcss_sqlite::require_pool_current_schema(pool, &current_schema_identity())
+    xcss::sqlite::require_pool_current_schema(pool, &current_schema_identity())
         .await
         .context("database is not the exact current xscs schema")?;
-    xcss_platform_db::require_current_platform_metadata(pool, "server-control-plane").await?;
+    xcss::platform_db::require_current_platform_metadata(pool, "server-control-plane").await?;
     Ok(())
 }
 
@@ -189,30 +189,30 @@ pub async fn is_current(pool: &SqlitePool) -> bool {
 }
 
 pub async fn actual_schema_sha256(pool: &SqlitePool) -> anyhow::Result<String> {
-    Ok(xcss_sqlite::schema_fingerprint(pool).await?)
+    Ok(xcss::sqlite::schema_fingerprint(pool).await?)
 }
 
 /// The physical database admission budget includes the main file and journals.
 /// Validation uses the same byte boundary, without changing the source generation.
 pub const DATABASE_BYTE_BUDGET: u64 = 8 * 1024 * 1024 * 1024;
 
-pub fn snapshot_limits() -> xcss_sqlite::SnapshotLimits {
-    xcss_sqlite::SnapshotLimits {
+pub fn snapshot_limits() -> xcss::sqlite::SnapshotLimits {
+    xcss::sqlite::SnapshotLimits {
         max_total_bytes: DATABASE_BYTE_BUDGET,
         ..Default::default()
     }
 }
 
-pub fn connection_limits() -> xcss_sqlite::ConnectionLimits {
-    xcss_sqlite::ConnectionLimits::new(2 * 1024 * 1024)
+pub fn connection_limits() -> xcss::sqlite::ConnectionLimits {
+    xcss::sqlite::ConnectionLimits::new(2 * 1024 * 1024)
 }
 
 /// Capture before the runtime opens the original SQLite connection.
 pub async fn validation_snapshot(
     path: PathBuf,
-) -> anyhow::Result<xcss_sqlite::ValidationSnapshotPool> {
+) -> anyhow::Result<xcss::sqlite::ValidationSnapshotPool> {
     let snapshot = tokio::task::spawn_blocking(move || {
-        xcss_sqlite::ValidationSnapshot::capture_with_limits(path, snapshot_limits())
+        xcss::sqlite::ValidationSnapshot::capture_with_limits(path, snapshot_limits())
     })
     .await
     .context("join private database validation capture")??;
@@ -223,8 +223,8 @@ pub async fn validation_snapshot(
 
 fn validate_read_only(path: &Path) -> anyhow::Result<()> {
     validate_existing_file(path)?;
-    let snapshot = xcss_sqlite::ValidationSnapshot::capture_with_limits(path, snapshot_limits())?;
-    xcss_sqlite::block_on_sqlite_connection(async {
+    let snapshot = xcss::sqlite::ValidationSnapshot::capture_with_limits(path, snapshot_limits())?;
+    xcss::sqlite::block_on_sqlite_connection(async {
         let mut connection = SqliteConnection::connect_with(
             &SqliteConnectOptions::new()
                 .filename(snapshot.database_path())
@@ -234,7 +234,7 @@ fn validate_read_only(path: &Path) -> anyhow::Result<()> {
         .await
         .context("open private xscs schema-validation snapshot")?;
         let result = async {
-            xcss_sqlite::apply_connection_limits(&mut connection, connection_limits()).await?;
+            xcss::sqlite::apply_connection_limits(&mut connection, connection_limits()).await?;
             let deadline = std::time::Instant::now() + Duration::from_secs(3);
             connection
                 .lock_handle()
@@ -243,7 +243,7 @@ fn validate_read_only(path: &Path) -> anyhow::Result<()> {
             sqlx::raw_sql("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;")
                 .execute(&mut connection)
                 .await?;
-            xcss_sqlite::require_current_schema(&mut connection, &current_schema_identity())
+            xcss::sqlite::require_current_schema(&mut connection, &current_schema_identity())
                 .await
                 .context("database is not the exact current xscs schema")?;
             Ok::<_, anyhow::Error>(())

@@ -4,7 +4,7 @@ import {chromium,firefox,expect} from "@playwright/test";
 import {preview} from "vite";
 import AxeBuilder from "@axe-core/playwright";
 import {randomUUID} from "node:crypto";
-import {createAdministratorApiClient} from "@xcss/admin-web";
+import {createAdministratorApiClient} from "@xcss/web/admin-web";
 const largeJson=JSON.stringify({payload:"x".repeat(2_200_000)});
 const budgetClient=createAdministratorApiClient({baseUrl:"http://localhost:43210",fetchImpl:async()=>new Response(largeJson,{headers:{"content-type":"application/json","content-length":String(Buffer.byteLength(largeJson))}})});
 const isLargePayload=value=>value!==null&&typeof value==="object"&&typeof value.payload==="string";
@@ -25,7 +25,7 @@ try {for(const engine of process.argv.includes("--browser=firefox") ? [firefox] 
   const serverTimestamp=micros=>new Date(Math.floor(micros/1000)).toISOString().slice(0,19).replace("T"," ")+"."+String(micros%1_000_000).padStart(6,"0")+" +00:00";
   page.on("pageerror",e=>errors.push(e.message));
   const app={reference:{fingerprint:"c".repeat(64)},specification:{name:"Steam",output:"",cmd:"","working-dir":"","exclude-global-prep-cmd":false,elevated:false,"auto-detach":false,"wait-all":false,"exit-timeout":5,"prep-cmd":[],detached:[],"image-path":""}};
-  const device={id:randomUUID(),name:"游戏主机",registered:true,pairing_pending:false,revoked:false,client_online:true,sunshine_reachable:true,configuration_state:"pending_verification",last_seen_at_micros:Date.now()*1000,capabilities:{protocol:"sunshine-management/1",client_version:"0.3.1",os:"linux_x86_64",sunshine_version:"2026.914.233613",restart_allowed:true,managed_fields:configFields.map(field=>field.key),configuration_overwrite:true,application_management:true,application_host_commands_allowed:true,pending_pairing_listing:true,moonlight_pairing_management:true,diagnostics:true,maintenance:true,service_control:true},snapshot:{revision:"a".repeat(64),sunshine_version:"2026.914.233613",fields:{sunshine_name:"Original",qp:"28",nvenc_preset:"1",controller:"true",keyboard:"false"},effectiveness:"pending_verification"}};
+  const device={id:randomUUID(),name:"游戏主机",registered:true,pairing_pending:false,revoked:false,client_online:true,sunshine_reachable:true,configuration_state:"pending_verification",last_seen_at_micros:Date.now()*1000,capabilities:{protocol:"xscs-management/1",client_version:"0.3.1",os:"linux_x86_64",sunshine_version:"2026.914.233613",restart_allowed:true,managed_fields:configFields.map(field=>field.key),configuration_overwrite:true,application_management:true,application_host_commands_allowed:true,pending_pairing_listing:true,moonlight_pairing_management:true,diagnostics:true,maintenance:true,service_control:true},snapshot:{revision:"a".repeat(64),sunshine_version:"2026.914.233613",fields:{sunshine_name:"Original",qp:"28",nvenc_preset:"1",controller:"true",keyboard:"false"},effectiveness:"pending_verification"}};
   await page.route("**/api/v1/**",async route=>{
    const req=route.request();const path=new URL(req.url()).pathname;
    if(path.endsWith("/sunshine/config-fields"))return route.fulfill({json:configFields});

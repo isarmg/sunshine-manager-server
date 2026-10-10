@@ -1,11 +1,11 @@
-import { t } from "@xcss/admin-ui/i18n";
-import {createXcssAdminApplication,errorRequestId,useAdminApplication,InstancePageNavigation,type InstancePage,AccountPage} from "@xcss/admin-shell";
-import {EmptyState,ErrorState,LoadingState,Table} from "@xcss/admin-ui";
+import { t } from "@xcss/web/admin-ui/i18n";
+import {createXcssAdminApplication,errorRequestId,useAdminApplication,InstancePageNavigation,type InstancePage,AccountPage} from "@xcss/web/admin-shell";
+import {EmptyState,ErrorState,LoadingState,Table} from "@xcss/web/admin-ui";
 import {useEffect,useState} from "react";
 import {CURRENT_API_PREFIX,adminApi,isConfigFieldDefinitions,isDevices,isTicket,type ConfigFieldDefinition,type DeviceInfo,type Ticket} from "./api";
 import {ClientWorkspace} from "./ClientWorkspace";
 import {DeviceInstances} from "./DeviceInstances";
-import { InstanceHeaderActions } from "@xcss/admin-shell";
+import { InstanceHeaderActions } from "@xcss/web/admin-shell";
 function currentRoute():{page:InstancePage|"account";deviceId:string|null}{const[page,id]=window.location.hash.slice(1).split("/");return{page:["details","logs","account"].includes(page)?page as InstancePage|"account":"instances",deviceId:id&&/^[0-9a-f-]{36}$/.test(id)?id:null}}
 function DevicesPage(){
  const{client,notify}=useAdminApplication();const[devices,setDevices]=useState<DeviceInfo[]|null>(null);const[deviceFailure,setDeviceFailure]=useState<{requestId?:string}|null>(null);const[fieldFailure,setFieldFailure]=useState<{requestId?:string}|null>(null);const[createFailure,setCreateFailure]=useState<{requestId?:string}|null>(null);

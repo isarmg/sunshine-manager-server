@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use thiserror::Error;
-use xcss_error::{ErrorCode, ErrorEnvelope};
+use xcss::error::{ErrorCode, ErrorEnvelope};
 
 pub type AppResult<T> = Result<T, AppError>;
 

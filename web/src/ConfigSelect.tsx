@@ -1,4 +1,4 @@
-import { getLocale } from "@xcss/admin-ui/i18n";
+import { getLocale } from "@xcss/web/admin-ui/i18n";
 import {useEffect, useRef, useState, type KeyboardEvent} from "react";
 
 type Option = {value: string; label: string};

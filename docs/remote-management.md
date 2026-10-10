@@ -41,7 +41,7 @@ Client 管理设备配对不是 Sunshine–Moonlight 串流配对，不改变原
 执行期限已过，管理员需重新查看当前资源并提交。只读操作不套用该短期限。
 
 浏览器通过管理员 Session、CSRF 和 `/api/v1/sunshine/devices/{id}/tasks` 提交业务指令。
-202 只表示任务已持久化，并不表示执行成功。任务复用 Foundation 的
+202 只表示任务已持久化，并不表示执行成功。任务复用 xcss 的
 `pending/running/succeeded/failed/unknown/dead_letter/resolved` 状态，重复投递先核对持久执行事实。
 不确定结果不盲目重复重启，人工核对也不等于重新执行。刷新或退出不取消已接受任务。
 
@@ -49,7 +49,7 @@ Client 管理设备配对不是 Sunshine–Moonlight 串流配对，不改变原
 `GET /api/v1/sunshine/devices/{id}/tasks?date=YYYY-MM-DD` 返回当前管理员在该服务器日期的
 全部操作数组，不截断、不分页。服务器将日期解析为本机时区相邻两个午夜的半开区间，
 按任务创建时间筛选；浏览器时区不参与日志日期划分。
-日志页单次响应使用 Foundation JSON 传输允许的 64 MiB 上限和 120 秒超时；
+日志页单次响应使用 xcss JSON 传输允许的 64 MiB 上限和 120 秒超时；
 超出这些边界时显示读取错误。
 每条日志显示服务端转换的创建日期、时间和 UTC 偏移。
 `GET /api/v1/sunshine/devices/{id}/tasks?recent=50` 仅返回最新 50 条，供详情页定期刷新近期结果；

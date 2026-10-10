@@ -12,7 +12,7 @@ use uuid::Uuid;
 use xscs_protocol::{
     AUTHORIZATION_CODE_LENGTH, Binding, Capabilities, ConfigSnapshot, is_valid_authorization_code,
 };
-pub const SCHEMA: &str = "sunshine";
+pub const SCHEMA: &str = "xscs";
 pub use crate::database_schema::{initialize_empty, open_existing, open_or_initialize};
 
 type PairingStateRow = (Option<Vec<u8>>, Option<String>, Option<i64>);
@@ -510,8 +510,8 @@ pub async fn doctor(pool: &SqlitePool, secrets: &SecretBox) -> DoctorReport {
     .is_ok();
     DoctorReport {
         schema_ready: ready(pool).await,
-        integrity_ready: xcss_sqlite::integrity_check(pool).await.is_ok(),
-        foreign_keys_ready: xcss_sqlite::foreign_key_check(pool).await.is_ok(),
+        integrity_ready: xcss::sqlite::integrity_check(pool).await.is_ok(),
+        foreign_keys_ready: xcss::sqlite::foreign_key_check(pool).await.is_ok(),
         writable,
         encrypted_values_ready: require_current_runtime_state(pool, secrets).await.is_ok(),
     }
@@ -520,8 +520,8 @@ pub async fn require_current_runtime_state(
     pool: &SqlitePool,
     secrets: &SecretBox,
 ) -> anyhow::Result<()> {
-    xcss_sqlite::integrity_check(pool).await?;
-    xcss_sqlite::foreign_key_check(pool).await?;
+    xcss::sqlite::integrity_check(pool).await?;
+    xcss::sqlite::foreign_key_check(pool).await?;
     manager_id(pool).await?;
     list_devices(pool).await?;
     let authorizations: Vec<(String, String, Option<Vec<u8>>)> = sqlx::query_as(
@@ -542,7 +542,7 @@ pub async fn require_current_runtime_state(
             );
         }
     }
-    let store = xcss_operations::SqliteOperationStore::new(pool.clone());
+    let store = xcss::operations::SqliteOperationStore::new(pool.clone());
     let mut cursor = String::new();
     loop {
         let ids:Vec<String>=sqlx::query_scalar("SELECT operation_id FROM _xcss_operations WHERE operation_id>? ORDER BY operation_id LIMIT 128").bind(&cursor).fetch_all(pool).await?;

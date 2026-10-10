@@ -58,7 +58,7 @@ jobs:
         working-directory: web
         run: npm ci
       - name: Prepare embedded browser assets
-        run: web/node_modules/.bin/xcss-build-server --config foundation-web-build.json --mode development --web-only --no-install
+        run: web/node_modules/.bin/xcss-build-server --config xcss-web-build.json --mode development --web-only --no-install
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Check the Server target

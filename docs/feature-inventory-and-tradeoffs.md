@@ -1,6 +1,6 @@
 # xscs 当前功能与取舍清单
 
-本文描述 `1.0.0` 与协议 `sunshine-management/1`。Server、Client 和协议只支持官方 Sunshine
+本文描述 `1.0.0` 与协议 `xscs-management/1`。Server、Client 和协议只支持官方 Sunshine
 `v2026.914.233613`，不注册旧协议、旧版本或旧状态的回退分支。
 
 ## 拓扑与所有权
@@ -36,7 +36,7 @@ Client 配对后按当前协议报告 Sunshine 专用管理能力，包含重启
 Client 首帧必须上报精确协议、Client/Sunshine 版本、平台、全部受管字段和领域能力。旧 v1 消息、缺少字段的
 能力对象、未知命令/结果字段和超过 64 KiB 的消息均失败关闭。
 
-每条命令都有独立业务权限、资源命名空间、输入边界和对应结果。写入先持久化 Foundation operation，Client
+每条命令都有独立业务权限、资源命名空间、输入边界和对应结果。写入先持久化 xcss operation，Client
 再持久化副作用意图。断线、回执丢失或崩溃后只核对持久事实，不自动重做副作用。配置和应用修改可用修订/内容
 核对；关闭应用、PIN 和维护等没有充分可观察证据的动作在丢回执时保持 `unknown`。
 
@@ -46,7 +46,7 @@ Sunshine 日志、应用列表和客户端列表都有数量/大小限制；报�
 ## 平台、数据与发行
 
 - Server 发行目标为 Linux AMD64，监听固定为 loopback，外部 HTTPS/WSS 由可信入口终止。
-- 管理 API 仅 `/api/v1`；SQLite Schema revision 1；正式发行绑定 Schema、Foundation revision、源码提交和全树摘要。
+- 管理 API 仅 `/api/v1`；SQLite Schema revision 1；正式发行绑定 Schema、xcss revision、源码提交和全树摘要。
 - 不提供任意 HTTP 代理、任意文件读写、远程 Shell、Sunshine 安装升级、视频转发、Server HA 或旧协议兼容。
 
 ## 验证矩阵

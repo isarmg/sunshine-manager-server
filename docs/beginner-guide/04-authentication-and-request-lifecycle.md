@@ -1,6 +1,6 @@
 # 04. 认证与请求生命周期
 
-浏览器管理员认证由 Foundation 提供：username/password 登录、Secure HttpOnly SameSite Cookie、Session
+浏览器管理员认证由 xcss 提供：username/password 登录、Secure HttpOnly SameSite Cookie、Session
 恢复/退出、CSRF 和严格 Origin/Host 校验。实例授权码、Client credential 与管理员密码不是同一种凭据。
 
 管理员创建实例时得到长期授权码；Server 保存可解密密文和查找摘要。Client 用它完成配对并得到随机

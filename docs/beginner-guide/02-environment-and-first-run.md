@@ -3,7 +3,7 @@
 Server 开发需要固定 Rust/Node 工具链、SQLite URL、32 字节 Base64 credential key、
 bootstrap 管理员密码和 loopback bind。使用 `config/xscs.env.example`，不要提交真实秘密。
 
-先通过 Foundation `xcss-build-server --config foundation-web-build.json --mode development` 构建 Web、Rust 并验证二进制资源清单，再运行 Rust 检查。Server 启动后检查 `/healthz`、`/readyz` 和管理员登录。创建一个测试实例，
+先通过 xcss `xcss-build-server --config xcss-web-build.json --mode development` 构建 Web、Rust 并验证二进制资源清单，再运行 Rust 检查。Server 启动后检查 `/healthz`、`/readyz` 和管理员登录。创建一个测试实例，
 再在隔离主机运行独立 xscc 完成配对；不要把开发 Client 指向已有生产 Sunshine。
 
 常见失败分层：Server TLS/Origin、实例授权码或已轮换、Client WSS ingress、Client 本地证书验证、

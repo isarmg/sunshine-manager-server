@@ -1,6 +1,6 @@
 # 03. Rust、HTTP 与 Web
 
-管理路由位于 `/api/v1/sunshine/*`，只接受 Foundation 管理员 Session；写请求还需要 CSRF 与同源验证。
+管理路由位于 `/api/v1/sunshine/*`，只接受 xcss 管理员 Session；写请求还需要 CSRF 与同源验证。
 Client 路由位于 `/xscc/v1/*`，不接受浏览器 Cookie/Origin，只信任同机 TLS ingress 提供的 HTTPS
 事实。两组身份域不能互换。
 

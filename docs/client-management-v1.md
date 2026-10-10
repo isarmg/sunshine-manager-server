@@ -1,6 +1,6 @@
 # xscc 管理协议 v1
 
-协议固定为 `sunshine-management/1`，WebSocket 子协议为 `sunshine-management.v1`，适配 Sunshine
+协议固定为 `xscs-management/1`，WebSocket 子协议为 `xscs-management.v1`，适配 Sunshine
 `v2026.914.233613`。旧协议、旧 Sunshine 版本及缺少当前能力字段的 Hello 均被拒绝，不进行协商降级。
 
 Client 主动建立 WSS 连接，Sunshine 凭据只保存在主机的受保护状态中。Manager 下发领域命令，Client 只调用

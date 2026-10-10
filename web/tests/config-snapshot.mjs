@@ -37,7 +37,7 @@ try {
         client_online: true, sunshine_reachable: true, configuration_state: "awaiting_restart",
         last_seen_at_micros: clock,
         capabilities: {
-          protocol: "sunshine-management/1", client_version: "0.1.0", os, sunshine_version: version,
+          protocol: "xscs-management/1", client_version: "0.1.0", os, sunshine_version: version,
           restart_allowed: true, managed_fields: fields.map(field => field.key),
           configuration_overwrite:true,application_management: false, application_host_commands_allowed: false,
           pending_pairing_listing:true,moonlight_pairing_management: false, diagnostics: false, maintenance: false, service_control: false,

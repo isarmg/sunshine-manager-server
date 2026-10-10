@@ -115,7 +115,7 @@ async fn mutate_while_holding_connection(path: &Path, sql: &str) -> sqlx::Sqlite
 #[tokio::test]
 async fn exact_current_schema_is_durable_and_self_identifying() {
     let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("sunshine.sqlite3");
+    let path = directory.path().join("xscs.sqlite3");
     let url = database_url(&path);
 
     let pool = db::open_or_initialize(&url).await.unwrap();
@@ -124,7 +124,7 @@ async fn exact_current_schema_is_durable_and_self_identifying() {
         database_schema::actual_schema_sha256(&pool).await.unwrap(),
         database_schema::SCHEMA_SHA256
     );
-    let identity = xcss_sqlite::require_pool_current_schema(
+    let identity = xcss::sqlite::require_pool_current_schema(
         &pool,
         &database_schema::current_schema_identity(),
     )
@@ -157,8 +157,8 @@ async fn exact_current_schema_is_durable_and_self_identifying() {
     .execute(&pool)
     .await
     .unwrap();
-    xcss_sqlite::integrity_check(&pool).await.unwrap();
-    xcss_sqlite::foreign_key_check(&pool).await.unwrap();
+    xcss::sqlite::integrity_check(&pool).await.unwrap();
+    xcss::sqlite::foreign_key_check(&pool).await.unwrap();
     close_sqlite_workers(&pool).await;
 
     let reopened = db::open_existing(&url).await.unwrap();

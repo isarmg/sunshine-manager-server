@@ -8,12 +8,12 @@ use uuid::Uuid;
 pub mod config;
 
 /// Current Client session/capability contract.
-pub const PROTOCOL: &str = "sunshine-management/1";
+pub const PROTOCOL: &str = "xscs-management/1";
 /// Current business-task contract. Its shape stays stable when session capabilities change,
 /// preserving durable operation fingerprints across transport-only updates.
-pub const TASK_PROTOCOL: &str = "sunshine-task/1";
+pub const TASK_PROTOCOL: &str = "xscs-task/1";
 /// A slash is not legal in an RFC 6455 WebSocket subprotocol header token.
-pub const WEBSOCKET_SUBPROTOCOL: &str = "sunshine-management.v1";
+pub const WEBSOCKET_SUBPROTOCOL: &str = "xscs-management.v1";
 pub const SUNSHINE_VERSION: &str = "2026.914.233613";
 pub const SUPPORTED_SUNSHINE_VERSIONS: &[&str] = &[SUNSHINE_VERSION];
 pub const LIVE_HEALTH_PATH: &str = "/healthz";
@@ -410,14 +410,14 @@ pub enum ManagerMessage {
         operation_id: String,
         fingerprint: String,
         report_digest: String,
-        /// Foundation has a final outcome, including an explicit human resolution.
+        /// xcss has a final outcome, including an explicit human resolution.
         finalized: bool,
     },
     Revoked {},
 }
 
 /// These are execution observations, NOT another persistent task lifecycle.
-/// Manager maps observations into the existing Foundation operation transitions.
+/// Manager maps observations into the existing xcss operation transitions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Report {
@@ -1245,11 +1245,11 @@ mod protocol_v1_tests {
 
     #[test]
     fn old_capability_shape_and_protocol_are_rejected() {
-        let old = serde_json::json!({"protocol":"sunshine-management/1","client_version":"0.1.4","os":"linux_x86_64","sunshine_version":SUNSHINE_VERSION,"restart_allowed":true,"managed_fields":[]});
+        let old = serde_json::json!({"protocol":"xscs-management/1","client_version":"0.1.4","os":"linux_x86_64","sunshine_version":SUNSHINE_VERSION,"restart_allowed":true,"managed_fields":[]});
         assert!(serde_json::from_value::<Capabilities>(old).is_err());
         assert!(
             decode_manager_message(
-                br#"{"type":"task","mode":"execute","task":{"protocol":"sunshine-management/1"}}"#
+                br#"{"type":"task","mode":"execute","task":{"protocol":"xscs-management/1"}}"#
             )
             .is_err()
         );

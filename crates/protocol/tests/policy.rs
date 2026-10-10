@@ -216,7 +216,7 @@ fn binding_protocol_and_permissions_are_enforced() {
         task.validate(&task.binding, &capabilities()),
         Err(Rejection::PermissionDenied)
     );
-    task.protocol = "sunshine-management/1".into();
+    task.protocol = "xscs-management/1".into();
     assert_eq!(
         task.validate(&task.binding, &capabilities()),
         Err(Rejection::InvalidTask)
@@ -266,12 +266,36 @@ fn session_capabilities_do_not_change_durable_task_fingerprints() {
     assert_ne!(PROTOCOL, TASK_PROTOCOL);
     assert_eq!(
         task.fingerprint().unwrap(),
-        "a2868c8102cf8023023c2d2857babd0dc4518aab607b28a93f3d1a92b0199e78"
+        "b2ad5884ecfc22cde6e52c5bed3e1c8800dbb76b3d3abcb7edfddc4fee7910c5"
     );
     let mut incompatible = capabilities();
     incompatible.protocol = TASK_PROTOCOL.into();
     assert_eq!(
         task.validate(&task.binding, &incompatible),
+        Err(Rejection::InvalidTask)
+    );
+}
+
+#[test]
+fn foreign_protocol_namespaces_are_rejected_without_reinterpreting_tasks() {
+    let mut task = task(Command::ReadConfig {}, Permission::ReadConfig);
+    let mut capabilities = capabilities();
+    assert!(task.validate(&task.binding, &capabilities).is_ok());
+
+    // A foreign namespace is not an alias for xscs v1.
+    capabilities.protocol = "foreign-management/1".into();
+    assert!(capabilities.validate().is_err());
+    assert_eq!(
+        task.validate(&task.binding, &capabilities),
+        Err(Rejection::InvalidTask)
+    );
+
+    capabilities.protocol = PROTOCOL.into();
+    let current_fingerprint = task.fingerprint().unwrap();
+    task.protocol = "foreign-task/1".into();
+    assert_ne!(current_fingerprint, task.fingerprint().unwrap());
+    assert_eq!(
+        task.validate(&task.binding, &capabilities),
         Err(Rejection::InvalidTask)
     );
 }

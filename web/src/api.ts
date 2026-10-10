@@ -1,13 +1,13 @@
-import { createAdministratorApiClient } from "@xcss/admin-web";
-import { isErrorEnvelope, type ErrorEnvelope } from "@xcss/contracts";
-import { isApiClientError } from "@xcss/http-client";
+import { createAdministratorApiClient } from "@xcss/web/admin-web";
+import { isErrorEnvelope, type ErrorEnvelope } from "@xcss/web/contracts";
+import { isApiClientError } from "@xcss/web/http-client";
 
 export const CURRENT_API_PREFIX = "/api/v1";
 export const adminApi = createAdministratorApiClient();
 
 export type Snapshot = {revision:string;sunshine_version:string;fields:Record<string,string>;effectiveness:"pending_verification"|"awaiting_restart"};
 export type Capabilities={protocol:string;client_version:string;os:string;sunshine_version:string;restart_allowed:boolean;managed_fields:string[];configuration_overwrite:boolean;application_management:boolean;application_host_commands_allowed:boolean;moonlight_pairing_management:boolean;pending_pairing_listing:boolean;diagnostics:boolean;maintenance:boolean;service_control:boolean};
-export const CURRENT_CLIENT_PROTOCOL = "sunshine-management/1";
+export const CURRENT_CLIENT_PROTOCOL = "xscs-management/1";
 export function supportsConfigurationOverwrite(capabilities:Capabilities|null):boolean{
  return capabilities?.protocol===CURRENT_CLIENT_PROTOCOL&&capabilities.configuration_overwrite;
 }

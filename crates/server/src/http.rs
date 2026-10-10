@@ -34,10 +34,10 @@ use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
     time::{Instant, timeout},
 };
-use xcss_admin_auth::AdministratorOriginMode;
-use xcss_admin_core::AdministratorService;
-use xcss_admin_sqlite::SqliteAdministratorStore;
-use xcss_server_cli::{ContractJson, ContractPath};
+use xcss::admin_auth::AdministratorOriginMode;
+use xcss::admin_core::AdministratorService;
+use xcss::admin_sqlite::SqliteAdministratorStore;
+use xcss::server_cli::{ContractJson, ContractPath};
 use xscs_protocol::{
     Binding, ClientMessage, Command, DeliveryMode, MAX_MESSAGE_BYTES, ManagerMessage,
     WEBSOCKET_SUBPROTOCOL,
@@ -50,7 +50,7 @@ pub struct WorkerState {
     administrator_service: Arc<AdministratorService<SqliteAdministratorStore>>,
     administrator_origin_mode: AdministratorOriginMode,
     operations: OperationManager,
-    web_directory: Option<Arc<xcss_web_assets::DirectoryAssets>>,
+    web_directory: Option<Arc<xcss::web_assets::DirectoryAssets>>,
     client_slots: HistoryReads,
     history_reads: HistoryReads,
     task_writes: HistoryReads,
@@ -80,7 +80,7 @@ impl WorkerState {
             secrets,
             web_directory: static_dir
                 .into()
-                .map(xcss_web_assets::DirectoryAssets::new)
+                .map(xcss::web_assets::DirectoryAssets::new)
                 .transpose()?
                 .map(Arc::new),
             client_slots: HistoryReads::with_capacity(256),
@@ -94,7 +94,7 @@ impl WorkerState {
 }
 pub fn router(
     state: WorkerState,
-    runtime: xcss_server_runtime::RuntimeHandle,
+    runtime: xcss::server_runtime::RuntimeHandle,
 ) -> anyhow::Result<Router> {
     let protected = Router::new()
         .route("/sunshine/config-fields", get(config_fields))
@@ -131,7 +131,7 @@ pub fn router(
     let api = Router::new()
         .nest(API_VERSION_PREFIX, protected)
         .fallback(|| async { AppError::NotFound("Not Found".into()) });
-    let platform = xcss_server_runtime::platform_router(
+    let platform = xcss::server_runtime::platform_router(
         runtime,
         "xscs",
         state.administrator_origin_mode,
@@ -169,7 +169,7 @@ pub fn router(
         .method_not_allowed_fallback(|| async { AppError::MethodNotAllowed })
         .layer(axum::middleware::from_fn(log_request))
         .layer(axum::middleware::from_fn(
-            xcss_server_cli::request_context_middleware,
+            xcss::server_cli::request_context_middleware,
         )))
 }
 async fn authenticate(
@@ -177,7 +177,7 @@ async fn authenticate(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let identity = match xcss_admin_axum::authenticate_request(
+    let identity = match xcss::admin_axum::authenticate_request(
         &state.administrator_service,
         request.headers(),
         request.uri(),
@@ -365,7 +365,7 @@ async fn device_tasks(
     State(state): State<WorkerState>,
     Extension(actor): Extension<InternalIdentity>,
     ContractPath(id): ContractPath<String>,
-    xcss_server_cli::ContractQuery(query): xcss_server_cli::ContractQuery<TaskListQuery>,
+    xcss::server_cli::ContractQuery(query): xcss::server_cli::ContractQuery<TaskListQuery>,
 ) -> AppResult<Response> {
     query.validate()?;
     let permit = state.history_reads.acquire(&id)?;
@@ -689,7 +689,7 @@ async fn serve_client(
     binding: &Binding,
     authenticated_credential_hash: &[u8],
     session: &str,
-    pending: &mut Option<xcss_operations::StoredOperation>,
+    pending: &mut Option<xcss::operations::StoredOperation>,
 ) -> AppResult<()> {
     let ClientMessage::Hello {
         binding: hello,
@@ -723,7 +723,7 @@ async fn serve_client(
             return Err(AppError::Unauthorized);
         }
         // Fence the old connection before adopting its evidence-only continuation.
-        if operation.operation.state == xcss_operations::OperationState::Running
+        if operation.operation.state == xcss::operations::OperationState::Running
             && operation.operation.lease_owner.as_deref() != Some(session)
         {
             state.operations.disconnected(&operation).await?;
@@ -776,7 +776,7 @@ async fn serve_client(
                                 if pending.as_ref().is_some_and(|op|op.operation.operation_id==operation_id){*pending=None;wake.notify_one();}
                                 // Only acknowledge after the transaction has durably committed.
                                 let accepted=state.operations.receipt_operation(&operation_id,binding).await?;
-                                let finalized=!matches!(accepted.operation.state,xcss_operations::OperationState::Pending|xcss_operations::OperationState::Running|xcss_operations::OperationState::Unknown);
+                                let finalized=!matches!(accepted.operation.state,xcss::operations::OperationState::Pending|xcss::operations::OperationState::Running|xcss::operations::OperationState::Unknown);
                                 send(&mut socket,ManagerMessage::ResultAccepted{operation_id,fingerprint,report_digest,finalized}).await?;
                             }
                             _=>return Err(AppError::BadRequest("重复 Client Hello".into())),
@@ -816,7 +816,7 @@ async fn log_request(
     use tracing::Instrument;
     let request_id = request
         .extensions()
-        .get::<xcss_contracts::RequestId>()
+        .get::<xcss::contracts::RequestId>()
         .map(|value| value.as_str().to_owned())
         .unwrap_or_default();
     let span = tracing::info_span!("http.request", request_id = request_id.as_str());
@@ -871,7 +871,7 @@ mod tests {
     use serde_json::Value;
     use sqlx::sqlite::SqlitePoolOptions;
     use tower::ServiceExt;
-    use xcss_error::ErrorEnvelope;
+    use xcss::error::ErrorEnvelope;
 
     #[tokio::test]
     async fn cancelled_http_write_retains_its_instance_slot_until_the_worker_finishes() {
@@ -964,11 +964,11 @@ mod tests {
         None
     }
 
-    fn test_runtime() -> xcss_server_runtime::RuntimeHandle {
-        xcss_server_runtime::platform_handle(xcss_server_runtime::ProductDescriptor {
+    fn test_runtime() -> xcss::server_runtime::RuntimeHandle {
+        xcss::server_runtime::platform_handle(xcss::server_runtime::ProductDescriptor {
             id: "xscs".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            foundation_revision: env!("XCSS_FOUNDATION_REVISION").to_owned(),
+            xcss_revision: env!("XCSS_REVISION").to_owned(),
             profile: "server-control-plane".to_owned(),
             capabilities: vec!["embedded-web".into(), "server-runtime".to_owned()],
         })
@@ -1143,7 +1143,7 @@ mod tests {
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::HOST, "localhost")
                     .header(header::ORIGIN, "http://localhost")
-                    .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+                    .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
                     .body(Body::from(
                         r#"{"username":"admin","password":"bad-password"}"#,
                     ))
@@ -1162,7 +1162,7 @@ mod tests {
         let authority_only = Request::post("http://localhost/api/v1/auth/login")
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ORIGIN, "http://localhost")
-            .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+            .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
             .body(Body::from(body))
             .unwrap();
         assert_eq!(
@@ -1179,7 +1179,7 @@ mod tests {
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::HOST, "localhost")
             .header(header::ORIGIN, "http://localhost")
-            .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+            .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
             .body(Body::from(body))
             .unwrap();
         assert_eq!(
@@ -1201,7 +1201,7 @@ mod tests {
                         .header(header::CONTENT_TYPE, "application/json")
                         .header(header::HOST, "localhost")
                         .header(header::ORIGIN, "http://localhost")
-                        .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+                        .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
                         .body(Body::from(body))
                         .unwrap(),
                 )
@@ -1220,7 +1220,7 @@ mod tests {
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::HOST, "localhost")
                     .header(header::ORIGIN, "http://localhost")
-                    .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+                    .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
                     .body(Body::from(
                         r#"{"email":"admin","password":"correct-password"}"#,
                     ))
@@ -1275,7 +1275,7 @@ mod tests {
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::HOST, "localhost")
                     .header(header::ORIGIN, "http://localhost")
-                    .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+                    .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
                     .body(Body::from(oversized))
                     .unwrap(),
             )
@@ -1323,7 +1323,7 @@ mod tests {
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::HOST, "localhost")
                     .header(header::ORIGIN, "http://localhost")
-                    .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+                    .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
                     .body(Body::from(
                         r#"{"username":" Admin ","password":"correct horse battery staple"}"#,
                     ))
@@ -1374,23 +1374,23 @@ mod tests {
             .unwrap();
         assert_eq!(stored_hash.len(), 32);
         assert_eq!(
-            xcss_admin_auth::token_hash(session_token).as_slice(),
+            xcss::admin_auth::token_hash(session_token).as_slice(),
             stored_hash
         );
         assert_ne!(session_token.as_bytes(), stored_hash);
 
         for (name, value) in [
-            (xcss_admin_auth::ORIGIN_HEADER, "http://localhost"),
-            (xcss_admin_auth::HOST_HEADER, "localhost"),
-            (xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin"),
-            (xcss_admin_auth::CSRF_HEADER, csrf.as_str()),
+            (xcss::admin_auth::ORIGIN_HEADER, "http://localhost"),
+            (xcss::admin_auth::HOST_HEADER, "localhost"),
+            (xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin"),
+            (xcss::admin_auth::CSRF_HEADER, csrf.as_str()),
         ] {
             let mut request = Request::post("/api/v1/auth/logout")
                 .header(header::COOKIE, &cookie)
-                .header(xcss_admin_auth::CSRF_HEADER, &csrf)
+                .header(xcss::admin_auth::CSRF_HEADER, &csrf)
                 .header(header::HOST, "localhost")
                 .header(header::ORIGIN, "http://localhost")
-                .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+                .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
                 .body(Body::empty())
                 .unwrap();
             request.headers_mut().append(
@@ -1481,7 +1481,7 @@ mod tests {
                     .header(header::COOKIE, &cookie)
                     .header(header::HOST, "localhost")
                     .header(header::ORIGIN, "http://localhost")
-                    .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+                    .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1527,7 +1527,7 @@ mod tests {
                     .header("x-csrf-token", &refreshed_csrf)
                     .header(header::HOST, "localhost")
                     .header(header::ORIGIN, "http://localhost")
-                    .header(xcss_admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
+                    .header(xcss::admin_auth::SEC_FETCH_SITE_HEADER, "same-origin")
                     .body(Body::empty())
                     .unwrap(),
             )

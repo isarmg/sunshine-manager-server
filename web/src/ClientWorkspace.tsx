@@ -1,15 +1,15 @@
 import { operationLabel, configValueLabel } from "./display-labels";
-import { t } from "@xcss/admin-ui/i18n";
+import { t } from "@xcss/web/admin-ui/i18n";
 import {useEffect,useRef,useState} from "react";
-import {Button,ConfirmDangerDialog,EmptyState,ErrorState,FormField,LoadingState,Table,TextField} from "@xcss/admin-ui";
-import {useAdminApplication,errorRequestId} from "@xcss/admin-shell";
+import {Button,ConfirmDangerDialog,EmptyState,ErrorState,FormField,LoadingState,Table,TextField} from "@xcss/web/admin-ui";
+import {useAdminApplication,errorRequestId} from "@xcss/web/admin-shell";
 import {CURRENT_API_PREFIX,isClientAuthorization,isDevice,isOperation,isOperations,isOperationPage,isOperationSummary,isTaskCalendar,isSnapshot,supportsConfigurationOverwrite,type ClientAuthorization,type Command,type ConfigFieldDefinition,type DeviceInfo,type Operation,type Snapshot,type Ticket,currentErrorEnvelope} from "./api";
 import {configCategories,fieldsForDevice,prerequisiteLabel,type ConfigCategory} from "./config-fields";
 import {SunshineControls,isSunshineManagementCategory,sunshineManagementCategories,type SunshineManagementCategory} from "./SunshineControls";
 import {ConfigSelect} from "./ConfigSelect";
 import {configurationFeedback,isConfigurationCommand,type ConfigurationActivity} from "./configuration-feedback";
-import { DateRangeField, type CalendarDateRange } from "@xcss/admin-ui/date-range";
-import "@xcss/admin-ui/date-range.css";
+import { DateRangeField, type CalendarDateRange } from "@xcss/web/admin-ui/date-range";
+import "@xcss/web/admin-ui/date-range.css";
 const states:Record<string,string>={unknown:t("尚未核对", "Not yet checked"),awaiting_restart:t("配置已保存，等待管理员重启", "Configuration saved; waiting for an administrator to restart"),pending_verification:t("配置已读取，运行时生效待验证", "Configuration read; runtime effect needs verification"),drift_detected:t("实际配置与已保存修订不同，请核对冲突", "Actual configuration differs from the saved revision; review the conflict")};
 const tasks:Record<string,string>={pending:t("排队中", "Queued"),running:t("已下发，等待执行回执", "Dispatched; waiting for execution receipt"),succeeded:t("执行已完成", "Execution completed"),failed:t("执行失败", "Execution failed"),unknown:t("结果不确定", "Outcome unknown"),resolved:t("已人工核对", "Manually reconciled"),dead_letter:t("执行已拒绝", "Execution rejected")};
 const instanceNameError=t("实例名称须为 1–32 个字符，不能包含控制字符或首尾空白。", "Use 1–32 characters without control characters or surrounding whitespace.");
@@ -51,7 +51,7 @@ export function ClientWorkspace({device,fieldDefinitions,refreshSignal,configRef
   if(page!=="details"){configReadKey.current=null;return}
   const controller=new AbortController();let active=true;let timer:number|undefined;
   setBaseline(null);setDraft({});setRemove([]);setSubmittedConfiguration(null);setConfigFailure(null);setConfigActivity(null);
-  if(device.revoked||!device.registered||device.capabilities?.protocol!=="sunshine-management/1"){configReadKey.current=null;setConfigLoading(false);return}
+  if(device.revoked||!device.registered||device.capabilities?.protocol!=="xscs-management/1"){configReadKey.current=null;setConfigLoading(false);return}
   setConfigLoading(true);
   const key=configReadKey.current?.refresh===configRefreshSignal?configReadKey.current.key:crypto.randomUUID();
   configReadKey.current={refresh:configRefreshSignal,key};

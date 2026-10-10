@@ -1,4 +1,4 @@
-import { t } from "@xcss/admin-ui/i18n";
+import { t } from "@xcss/web/admin-ui/i18n";
 
 /** Display only: protocol values in requests, stored tasks and snapshots stay exact. */
 const labels: Record<string, readonly [string, string]> = {

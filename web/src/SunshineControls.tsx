@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,type FormEvent} from "react";
-import {Button,FormField,TextField} from "@xcss/admin-ui";
-import {t} from "@xcss/admin-ui/i18n";
+import {Button,FormField,TextField} from "@xcss/web/admin-ui";
+import {t} from "@xcss/web/admin-ui/i18n";
 import type {ApplicationRef,ApplicationSpec,ApplicationsSnapshot,Command,DeviceInfo,DiagnosticSnapshot,LogPage,Operation,PairedClientsSnapshot,Report,VirtualInputStatus} from "./api";
 import {ConfigSelect} from "./ConfigSelect";
 import {supportsPendingPairingListing} from "./api";
@@ -99,7 +99,7 @@ export function SunshineControls({device,operations,busy,blocked,section,submit,
  function edit(reference:ApplicationRef|null){const value=reference?appSnapshot?.applications.find(value=>value.reference.fingerprint===reference.fingerprint)?.specification??emptyApplication:emptyApplication;setEditing(reference);setApplication(value);setDetachedText(value.detached.join("\n"))}
  async function saveApplication(event:FormEvent<HTMLFormElement>){event.preventDefault();if(!appSnapshot)return;const value={...application,detached:detachedText.split("\n").map(line=>line.trim()).filter(Boolean)};if(value.detached.length>16)return;const command:Command={kind:"save_application",expected_revision:appSnapshot.revision,target:editing??null,application:value,administrator_confirmed_host_commands:appHasHostCommands(value)};if(appHasHostCommands(value))confirm({title:t("确认保存主机命令", "Confirm host commands"),description:t("应用的启动、准备或分离命令会在 Sunshine 主机上执行程序。", "Application launch, preparation or detached commands execute programs on the Sunshine host."),run:()=>submit(command)});else await submit(command)}
  const sectionLabel=section==="service"?t("Sunshine 服务", "Sunshine service"):section==="moonlight"?t("Moonlight 配对", "Moonlight pairing"):sunshineManagementCategories.find(category=>category.id===section)?.label;
- if(!caps||caps.protocol!=="sunshine-management/1")return section?<section id={section==="moonlight"?"sunshine-moonlight-pairing":`sunshine-${section}`} className="xcss-content-panel" aria-label={sectionLabel}><p>{t("客户端尚未上报当前协议 能力。升级并重新连接客户端后可使用应用、配对、诊断和服务控制。", "The client has not reported the current protocol capabilities. Upgrade and reconnect it to use applications, pairing, diagnostics and service controls.")}</p></section>:null;
+ if(!caps||caps.protocol!=="xscs-management/1")return section?<section id={section==="moonlight"?"sunshine-moonlight-pairing":`sunshine-${section}`} className="xcss-content-panel" aria-label={sectionLabel}><p>{t("客户端尚未上报当前协议 能力。升级并重新连接客户端后可使用应用、配对、诊断和服务控制。", "The client has not reported the current protocol capabilities. Upgrade and reconnect it to use applications, pairing, diagnostics and service controls.")}</p></section>:null;
  const sectionAvailable=section==="applications"?caps.application_management:section==="diagnostics"?caps.diagnostics:section==="maintenance"?caps.maintenance:section==="service"?caps.service_control:true;
  return <>
  {section==="moonlight"&&(caps.moonlight_pairing_management&&supportsPendingPairingListing(caps)?<MoonlightPairing key={device.id} device={device} operations={operations} busy={busy} blocked={blocked} submit={submit} confirm={confirm}/>:<section id="sunshine-moonlight-pairing" className="xcss-content-panel" aria-label={sectionLabel}><p>{t("客户端尚未报告待配对请求查询能力。", "The client has not reported pending pairing request support.")}</p></section>)}

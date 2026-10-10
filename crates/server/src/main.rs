@@ -1,7 +1,7 @@
 use std::{io::Read as _, path::PathBuf};
 
 use clap::{Parser, Subcommand};
-use xcss_admin_core::AdministratorStore;
+use xcss::admin_core::AdministratorStore;
 use xscs::{
     ServeConfig, db,
     http::{WorkerState, router},
@@ -13,8 +13,8 @@ use xscs::{
 #[command(
     name = "xscs",
     version,
-    long_version = concat!(env!("CARGO_PKG_VERSION"), " source=", env!("XSCS_SOURCE_REVISION"), " foundation=", env!("XCSS_FOUNDATION_REVISION")),
-    about = "Independent Sunshine manager"
+    long_version = concat!(env!("CARGO_PKG_VERSION"), " source=", env!("XSCS_SOURCE_REVISION"), " xcss=", env!("XCSS_REVISION")),
+    about = "xscs: Sunshine management server"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -94,52 +94,52 @@ async fn main() -> std::process::ExitCode {
             };
         }
         Err(_) => {
-            let error = xcss_server_cli::ErrorEnvelope::with_code(
-                xcss_server_cli::ErrorCode::new("invalid_cli_input").unwrap(),
+            let error = xcss::server_cli::ErrorEnvelope::with_code(
+                xcss::server_cli::ErrorCode::new("invalid_cli_input").unwrap(),
                 "Command arguments do not satisfy the current CLI contract; use --help.",
             );
-            return xcss_server_cli::report_error(&error, json, 2);
+            return xcss::server_cli::report_error(&error, json, 2);
         }
     };
     match execute(cli).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            let envelope = if let Some(error) = error.downcast_ref::<xcss_config::ConfigError>() {
+            let envelope = if let Some(error) = error.downcast_ref::<xcss::config::ConfigError>() {
                 error.envelope()
-            } else if let Some(error) = error.downcast_ref::<xcss_server_cli::CliError>() {
+            } else if let Some(error) = error.downcast_ref::<xcss::server_cli::CliError>() {
                 error.0.clone()
-            } else if let Some(error) = error.downcast_ref::<xcss_state_file::Error>() {
-                xcss_server_cli::state_error(error)
-            } else if let Some(error) = error.downcast_ref::<xcss_server_cli::SnapshotError>() {
-                xcss_server_cli::snapshot_error(error)
+            } else if let Some(error) = error.downcast_ref::<xcss::state_file::Error>() {
+                xcss::server_cli::state_error(error)
+            } else if let Some(error) = error.downcast_ref::<xcss::server_cli::SnapshotError>() {
+                xcss::server_cli::snapshot_error(error)
             } else {
                 if !json {
                     eprintln!("{error:#}");
                 }
-                xcss_server_cli::ErrorEnvelope::with_code(
-                    xcss_server_cli::ErrorCode::new("current_state_invalid").unwrap(),
+                xcss::server_cli::ErrorEnvelope::with_code(
+                    xcss::server_cli::ErrorCode::new("current_state_invalid").unwrap(),
                     "The command could not validate or operate on the current configuration and data.",
                 )
             };
-            xcss_server_cli::report_error(&envelope, json, 1)
+            xcss::server_cli::report_error(&envelope, json, 1)
         }
     }
 }
 
 async fn query_status(bind: std::net::SocketAddr, json: bool) -> anyhow::Result<()> {
-    let report = xcss_server_cli::query_status(bind, "xscs")
+    let report = xcss::server_cli::query_status(bind, "xscs")
         .await
-        .map_err(xcss_server_cli::CliError)?;
+        .map_err(xcss::server_cli::CliError)?;
     if !report.ready {
         return Err(
-            xcss_server_cli::CliError(xcss_server_cli::ErrorEnvelope::with_code(
-                xcss_server_cli::ErrorCode::new("service_not_ready").unwrap(),
+            xcss::server_cli::CliError(xcss::server_cli::ErrorEnvelope::with_code(
+                xcss::server_cli::ErrorCode::new("service_not_ready").unwrap(),
                 "The service answered but its business readiness checks failed.",
             ))
             .into(),
         );
     }
-    xcss_server_cli::print_report(&report, json)?;
+    xcss::server_cli::print_report(&report, json)?;
     Ok(())
 }
 
@@ -159,27 +159,27 @@ async fn execute(mut cli: Cli) -> anyhow::Result<()> {
                 .bootstrap_admin_password
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("bootstrap_admin_password is required for init"))?;
-            xcss_admin_auth::validate_password(password)?;
-            xcss_server_cli::runtime_allowed(&config.data_dir)
-                .map_err(xcss_server_cli::CliError)?;
-            xcss_server_cli::create_empty_private_directory(&config.data_dir)
-                .map_err(xcss_server_cli::CliError)?;
-            let directory = xcss_state_file::PrivateStateDirectory::open(&config.data_dir)?;
-            xcss_server_cli::runtime_allowed(directory.path())
-                .map_err(xcss_server_cli::CliError)?;
+            xcss::admin_auth::validate_password(password)?;
+            xcss::server_cli::runtime_allowed(&config.data_dir)
+                .map_err(xcss::server_cli::CliError)?;
+            xcss::server_cli::create_empty_private_directory(&config.data_dir)
+                .map_err(xcss::server_cli::CliError)?;
+            let directory = xcss::state_file::PrivateStateDirectory::open(&config.data_dir)?;
+            xcss::server_cli::runtime_allowed(directory.path())
+                .map_err(xcss::server_cli::CliError)?;
             let _maintenance = directory.try_maintenance_lock()?;
-            xcss_server_cli::runtime_allowed(directory.path())
-                .map_err(xcss_server_cli::CliError)?;
-            xcss_server_cli::create_runtime_log_directory(&config.data_dir)
-                .map_err(xcss_server_cli::CliError)?;
+            xcss::server_cli::runtime_allowed(directory.path())
+                .map_err(xcss::server_cli::CliError)?;
+            xcss::server_cli::create_runtime_log_directory(&config.data_dir)
+                .map_err(xcss::server_cli::CliError)?;
             let database = xscs::database_schema::database_path(&config.database_url)?;
             anyhow::ensure!(
                 !database.try_exists()?,
                 "database already exists; init never overwrites existing data"
             );
             let pool = db::open_or_initialize(&config.database_url).await?;
-            let service = xcss_admin_core::AdministratorService::new(
-                xcss_admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
+            let service = xcss::admin_core::AdministratorService::new(
+                xcss::admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
             );
             service
                 .bootstrap_administrator(
@@ -189,7 +189,7 @@ async fn execute(mut cli: Cli) -> anyhow::Result<()> {
                 )
                 .await?;
             db::require_current_runtime_state(&pool, &config.secrets).await?;
-            xcss_sqlite::checkpoint(&pool).await?;
+            xcss::sqlite::checkpoint(&pool).await?;
             pool.close().await;
             tracing::info!(event = "common.initialization.completed");
             println!(
@@ -232,19 +232,19 @@ async fn execute(mut cli: Cli) -> anyhow::Result<()> {
             let password = read_password_from_stdin()?;
             let database = xscs::database_schema::database_path(&args.database_url)?;
             let directory =
-                xcss_state_file::PrivateStateDirectory::open(database.parent().unwrap())?;
-            xcss_server_cli::runtime_allowed(directory.path())
-                .map_err(xcss_server_cli::CliError)?;
+                xcss::state_file::PrivateStateDirectory::open(database.parent().unwrap())?;
+            xcss::server_cli::runtime_allowed(directory.path())
+                .map_err(xcss::server_cli::CliError)?;
             let _common_lock = directory.try_maintenance_lock()?;
-            xcss_server_cli::runtime_allowed(directory.path())
-                .map_err(xcss_server_cli::CliError)?;
+            xcss::server_cli::runtime_allowed(directory.path())
+                .map_err(xcss::server_cli::CliError)?;
             xscs::database_schema::validate_configuration_database(&args.database_url)?;
             let maintenance = MaintenanceLock::exclusive(&args.database_url)?;
             let pool =
                 xscs::database_schema::open_validated_location(&maintenance.database_url()).await?;
-            let username = xcss_admin_auth::normalize_administrator_username(&args.username)?;
-            let service = xcss_admin_core::AdministratorService::new(
-                xcss_admin_sqlite::SqliteAdministratorStore::new(pool),
+            let username = xcss::admin_auth::normalize_administrator_username(&args.username)?;
+            let service = xcss::admin_core::AdministratorService::new(
+                xcss::admin_sqlite::SqliteAdministratorStore::new(pool),
             );
             service
                 .change_administrator_password(&username, &password, current_time_micros()?)
@@ -258,12 +258,12 @@ async fn execute(mut cli: Cli) -> anyhow::Result<()> {
         }
         Command::Doctor => {
             let config = configuration()?;
-            let directory = xcss_state_file::PrivateStateDirectory::open(&config.data_dir)?;
-            xcss_server_cli::runtime_allowed(directory.path())
-                .map_err(xcss_server_cli::CliError)?;
+            let directory = xcss::state_file::PrivateStateDirectory::open(&config.data_dir)?;
+            xcss::server_cli::runtime_allowed(directory.path())
+                .map_err(xcss::server_cli::CliError)?;
             let _common_lock = directory.try_maintenance_lock()?;
-            xcss_server_cli::runtime_allowed(directory.path())
-                .map_err(xcss_server_cli::CliError)?;
+            xcss::server_cli::runtime_allowed(directory.path())
+                .map_err(xcss::server_cli::CliError)?;
             xscs::database_schema::validate_configuration_database(&config.database_url)?;
             let maintenance = MaintenanceLock::exclusive(&config.database_url)?;
             let pool =
@@ -331,18 +331,18 @@ async fn serve_with_config(
             "formal releases require embedded Web assets"
         );
     }
-    let signals = xcss_server_runtime::ProcessSignals::install()?;
-    let listeners = xcss_server_runtime::BoundListeners::bind([config.bind])?;
-    let transport = xcss_server_runtime::HttpServer::new(listeners, signals);
+    let signals = xcss::server_runtime::ProcessSignals::install()?;
+    let listeners = xcss::server_runtime::BoundListeners::bind([config.bind])?;
+    let transport = xcss::server_runtime::HttpServer::new(listeners, signals);
     // Hold both locks for the complete process lifetime. The instance lock
     // rejects a second worker, while the shared maintenance lock excludes
     // exclusive state and administrator maintenance.
-    xcss_server_cli::runtime_allowed(&config.data_dir).map_err(xcss_server_cli::CliError)?;
+    xcss::server_cli::runtime_allowed(&config.data_dir).map_err(xcss::server_cli::CliError)?;
     validate_existing_configuration(&config).await?;
-    let directory = xcss_state_file::PrivateStateDirectory::open(&config.data_dir)?;
-    xcss_server_cli::runtime_allowed(directory.path()).map_err(xcss_server_cli::CliError)?;
+    let directory = xcss::state_file::PrivateStateDirectory::open(&config.data_dir)?;
+    xcss::server_cli::runtime_allowed(directory.path()).map_err(xcss::server_cli::CliError)?;
     let _common_lock = directory.try_instance_lock()?;
-    xcss_server_cli::runtime_allowed(directory.path()).map_err(xcss_server_cli::CliError)?;
+    xcss::server_cli::runtime_allowed(directory.path()).map_err(xcss::server_cli::CliError)?;
     let application_lock = ApplicationLock::acquire(&config.database_url)?;
     validate_existing_configuration(&config).await?;
     enable_runtime_logging(&config.data_dir)?;
@@ -351,8 +351,8 @@ async fn serve_with_config(
     let pool =
         xscs::database_schema::open_validated_location(&application_lock.database_url()).await?;
     db::require_current_runtime_state(&pool, &config.secrets).await?;
-    let administrator_service = xcss_admin_core::AdministratorService::new(
-        xcss_admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
+    let administrator_service = xcss::admin_core::AdministratorService::new(
+        xcss::admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
     );
     anyhow::ensure!(
         administrator_service.store().administrator_count().await? > 0,
@@ -372,10 +372,10 @@ async fn serve_with_config(
     let audit_pool = state.pool.clone();
     let operations_pool = state.pool.clone();
     let runtime =
-        xcss_server_runtime::ServerRuntime::builder(xcss_server_runtime::ProductDescriptor {
+        xcss::server_runtime::ServerRuntime::builder(xcss::server_runtime::ProductDescriptor {
             id: "xscs".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            foundation_revision: env!("XCSS_FOUNDATION_REVISION").to_owned(),
+            xcss_revision: env!("XCSS_REVISION").to_owned(),
             profile: "server-control-plane".to_owned(),
             capabilities: vec![
                 "embedded-web".into(),
@@ -388,34 +388,34 @@ async fn serve_with_config(
         })
         .with_schema_identity(xscs::database_schema::current_schema_identity())
         .register_metric(
-            xcss_server_runtime::DiagnosticMetric::AuditBacklog,
+            xcss::server_runtime::DiagnosticMetric::AuditBacklog,
             move || {
-                let store = xcss_operations::SqliteOperationStore::new(audit_pool.clone());
+                let store = xcss::operations::SqliteOperationStore::new(audit_pool.clone());
                 async move { store.pending_audit_count().await.ok() }
             },
         )
         .register_metric(
-            xcss_server_runtime::DiagnosticMetric::OperationBacklog,
+            xcss::server_runtime::DiagnosticMetric::OperationBacklog,
             move || {
-                let store = xcss_operations::SqliteOperationStore::new(operations_pool.clone());
+                let store = xcss::operations::SqliteOperationStore::new(operations_pool.clone());
                 async move { store.active_operation_count().await.ok() }
             },
         )
         .register_health_check(
             "database",
-            xcss_server_runtime::health_check(move || {
+            xcss::server_runtime::health_check(move || {
                 let pool = health_pool.clone();
                 async move { db::ready(&pool).await }
             }),
         )
         .register_background_task(
             "durable-operations",
-            xcss_server_runtime::TaskCriticality::Critical,
+            xcss::server_runtime::TaskCriticality::Critical,
             move |shutdown| operation_manager.run_until(shutdown),
         )
         .register_background_task(
             "shutdown-log",
-            xcss_server_runtime::TaskCriticality::Degrading,
+            xcss::server_runtime::TaskCriticality::Degrading,
             |mut shutdown| async move {
                 if !*shutdown.borrow() {
                     let _ = shutdown.changed().await;
@@ -432,14 +432,14 @@ async fn serve_with_config(
         bind = %config.bind,
         schema = db::SCHEMA,
         recovered_running_operations = recovered,
-        "Sunshine manager ready"
+        "xscs ready"
     );
     runtime
         .serve(
             transport,
             router(state, runtime_handle)?.layer(axum::middleware::from_fn_with_state(
                 "xscs".to_owned(),
-                xcss_server_cli::service_identity_middleware,
+                xcss::server_cli::service_identity_middleware,
             )),
         )
         .await?;
@@ -453,11 +453,10 @@ fn current_time_micros() -> anyhow::Result<u64> {
         .map_err(|_| anyhow::anyhow!("current time exceeds administrator timestamp range"))
 }
 
-static LOG_LAYER: std::sync::OnceLock<xcss_log::FoundationStructuredLayer> =
-    std::sync::OnceLock::new();
+static LOG_LAYER: std::sync::OnceLock<xcss::log::XcssStructuredLayer> = std::sync::OnceLock::new();
 fn initialize_logging() -> anyhow::Result<()> {
     use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
-    let layer = xcss_log::FoundationStructuredLayer::new("xscs")?;
+    let layer = xcss::log::XcssStructuredLayer::new("xscs")?;
     LOG_LAYER
         .set(layer.clone())
         .map_err(|_| anyhow::anyhow!("logging already initialized"))?;
@@ -470,11 +469,12 @@ fn initialize_logging() -> anyhow::Result<()> {
     Ok(())
 }
 fn enable_runtime_logging(data_dir: &std::path::Path) -> anyhow::Result<()> {
-    xcss_server_cli::validate_runtime_log_directory(data_dir).map_err(xcss_server_cli::CliError)?;
-    let file = xcss_log::RotatingLogFile::open(
+    xcss::server_cli::validate_runtime_log_directory(data_dir)
+        .map_err(xcss::server_cli::CliError)?;
+    let file = xcss::log::RotatingLogFile::open(
         data_dir.join("logs"),
         "xscs",
-        xcss_log::LogRetention::default(),
+        xcss::log::LogRetention::default(),
     )?;
     LOG_LAYER
         .get()
@@ -484,16 +484,16 @@ fn enable_runtime_logging(data_dir: &std::path::Path) -> anyhow::Result<()> {
 }
 
 async fn validate_existing_configuration(config: &ServeConfig) -> anyhow::Result<()> {
-    xcss_server_cli::validate_runtime_log_directory(&config.data_dir)
-        .map_err(xcss_server_cli::CliError)?;
-    xcss_state_file::PrivateStateDirectory::open(&config.data_dir)?;
+    xcss::server_cli::validate_runtime_log_directory(&config.data_dir)
+        .map_err(xcss::server_cli::CliError)?;
+    xcss::state_file::PrivateStateDirectory::open(&config.data_dir)?;
     let snapshot = xscs::database_schema::validation_snapshot(
         xscs::database_schema::database_path(&config.database_url)?,
     )
     .await?;
     xscs::database_schema::validate_pool(snapshot.pool()).await?;
     db::require_current_runtime_state(snapshot.pool(), &config.secrets).await?;
-    let administrator = xcss_admin_sqlite::SqliteAdministratorStore::new(snapshot.pool().clone());
+    let administrator = xcss::admin_sqlite::SqliteAdministratorStore::new(snapshot.pool().clone());
     anyhow::ensure!(
         administrator.administrator_count().await? > 0,
         "administrator initialization is required"

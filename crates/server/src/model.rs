@@ -40,7 +40,7 @@ pub struct UpdateClientAuthorization {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OperationResolutionRequest {
-    pub resolution: xcss_operations::Resolution,
+    pub resolution: xcss::operations::Resolution,
 }
 pub fn validate_instance_name(value: &str) -> AppResult<()> {
     if value.trim().is_empty()

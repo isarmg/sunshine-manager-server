@@ -1,7 +1,7 @@
-import { t, getLocale } from "@xcss/admin-ui/i18n";
-import { Button, EmptyState, Table } from "@xcss/admin-ui";
-import { ErrorState } from "@xcss/admin-ui";
-import { errorRequestId, useAdminApplication } from "@xcss/admin-shell";
+import { t, getLocale } from "@xcss/web/admin-ui/i18n";
+import { Button, EmptyState, Table } from "@xcss/web/admin-ui";
+import { ErrorState } from "@xcss/web/admin-ui";
+import { errorRequestId, useAdminApplication } from "@xcss/web/admin-shell";
 import { useState } from "react";
 import { CURRENT_API_PREFIX, type DeviceInfo } from "./api";
 

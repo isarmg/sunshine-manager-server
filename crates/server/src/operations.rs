@@ -1,4 +1,4 @@
-//! Durable lifecycle belongs to Foundation; this module only dispatches product commands to devices.
+//! Durable lifecycle belongs to xcss; this module only dispatches product commands to devices.
 use crate::{
     crypto::{SecretBox, constant_time_equal_32},
     db,
@@ -16,8 +16,8 @@ use std::{
 };
 use tokio::sync::{Notify, watch};
 use uuid::Uuid;
-pub use xcss_operations::OperationState;
-use xcss_operations::{
+pub use xcss::operations::OperationState;
+use xcss::operations::{
     EnqueueOutcome, NewOperation, SqliteOperationStore, StoredOperation, Transition,
 };
 #[cfg(test)]
@@ -71,7 +71,7 @@ async fn check_history_capacity(
     .bind(value.idempotency_digest.as_slice())
     .fetch_one(&mut **tx)
     .await?;
-    // Foundation still validates the fingerprint of a retry, including at full capacity.
+    // xcss still validates the fingerprint of a retry, including at full capacity.
     if existing {
         return Ok(());
     }
@@ -388,7 +388,7 @@ async fn record_configuration(
 }
 
 fn namespace(device_id: &str, installation_id: &Uuid, resource: &str) -> String {
-    format!("sunshine.client.v1.{device_id}.{installation_id}.{resource}")
+    format!("xscc.client.v1.{device_id}.{installation_id}.{resource}")
 }
 fn resource(command: &Command) -> &'static str {
     if matches!(
@@ -748,7 +748,7 @@ impl OperationManager {
         let stored = SqliteOperationStore::enqueue_in(&mut tx, value)
             .await
             .map_err(|error| match error {
-                xcss_operations::Error::IdempotencyConflict => {
+                xcss::operations::Error::IdempotencyConflict => {
                     AppError::Conflict("幂等键已用于不同指令".into())
                 }
                 other => internal(other),
@@ -795,7 +795,7 @@ impl OperationManager {
                 .transpose()
                 .map_err(internal)?,
             resolution: stored.resolution_code,
-            // Foundation error codes may contain internal diagnostics. Expose
+            // xcss error codes may contain internal diagnostics. Expose
             // only reasons with an explicit administrator-facing meaning.
             status_reason: match stored.operation.error_code.as_deref() {
                 Some("authorization_rotated") => Some("authorization_rotated"),
@@ -972,7 +972,7 @@ impl OperationManager {
         &self,
         actor: &str,
         id: &str,
-        resolution: xcss_operations::Resolution,
+        resolution: xcss::operations::Resolution,
     ) -> AppResult<OperationView> {
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let bytes: Vec<u8> =
@@ -1144,7 +1144,7 @@ impl OperationManager {
         }
         let bytes = serde_json::to_vec(&report).map_err(internal)?;
         if stored.operation.state == OperationState::Unknown {
-            // Evidence only: never forge a human Foundation resolution.
+            // Evidence only: never forge a human xcss resolution.
             let state: String =
                 sqlx::query_scalar("SELECT state FROM _xcss_operations WHERE operation_id=?")
                     .bind(&stored.operation.operation_id)
@@ -1284,7 +1284,7 @@ impl OperationManager {
                     .await
                     .map_err(|_| "operation recovery unavailable".to_owned())?;
             }
-            tokio::select! {_ = xcss_server_runtime::wait_for_shutdown(&mut shutdown)=>break,_=tokio::time::sleep(Duration::from_secs(1))=>{}}
+            tokio::select! {_ = xcss::server_runtime::wait_for_shutdown(&mut shutdown)=>break,_=tokio::time::sleep(Duration::from_secs(1))=>{}}
         }
         Ok(())
     }
@@ -1422,7 +1422,7 @@ mod capacity_tests {
             .store
             .claim_next(
                 &format!(
-                    "sunshine.client.v1.{first}.{}.read",
+                    "xscc.client.v1.{first}.{}.read",
                     db::get_device(&manager.pool, &first)
                         .await
                         .unwrap()

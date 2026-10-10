@@ -1,4 +1,4 @@
-import { t } from "@xcss/admin-ui/i18n";
+import { t } from "@xcss/web/admin-ui/i18n";
 import { isSnapshot, type Command, type Operation } from "./api";
 
 export const configurationActions = {

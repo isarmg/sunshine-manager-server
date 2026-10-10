@@ -41,7 +41,7 @@ Client 执行前再次校验 binding、permission、revision、字段白名单�
 
 ## 5. 发布边界
 
-Server 仅发布 Linux AMD64 binary 与 Web。build.rs 从 `Cargo.lock` 自动派生唯一 Foundation revision；正式
+Server 仅发布 Linux AMD64 binary 与 Web。build.rs 从 `Cargo.lock` 自动派生唯一 xcss revision；正式
 binary 还绑定源码 revision、Schema revision 1 和 Web 资产。Release 树需通过自校验和篡改负例。
 
 

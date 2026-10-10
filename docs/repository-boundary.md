@@ -9,7 +9,7 @@ Server 校验当前接口与数据库身份，不自动转换不匹配状态。�
 
 跨仓库端到端测试保留在 `web/tests/client-end-to-end.mjs`。先在独立 Client 仓库构建所需精确提交，
 然后设置 `SUNSHINE_TEST_CLIENT_BINARY` 为该可执行文件的绝对路径；在本仓库执行 `npm --prefix web ci --ignore-scripts`，
-再执行 `web/node_modules/.bin/xcss-build-server --config foundation-web-build.json --mode development --no-install`，
+再执行 `web/node_modules/.bin/xcss-build-server --config xcss-web-build.json --mode development --no-install`，
 进入 `web` 执行 `node tests/client-end-to-end.mjs`。
 使用自定义 Cargo 输出目录时，另以 `SUNSHINE_TEST_SERVER_BINARY` 指定 Server 可执行文件绝对路径。
 该测试使用临时数据库、临时证书和本机 Sunshine HTTPS 测试替身，不操作已安装 Sunshine。

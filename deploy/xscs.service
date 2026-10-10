@@ -6,8 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ixcss-sunshine
-Group=ixcss-sunshine
+User=xscs
+Group=xscs
 EnvironmentFile=/etc/isarmg/xscs.env
 ExecStart=/opt/isarmg/xscs/current/bin/xscs run --release-root /opt/isarmg/xscs/current
 StateDirectory=isarmg/xscs/db

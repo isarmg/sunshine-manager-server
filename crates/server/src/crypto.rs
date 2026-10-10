@@ -1,4 +1,4 @@
-//! Sunshine-specific domains and lookup digests over Foundation secret types.
+//! Sunshine-specific domains and lookup digests over xcss secret types.
 
 use std::sync::Arc;
 
@@ -7,12 +7,12 @@ use hkdf::Hkdf;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
-use xcss_secret::{SecretBytes, SecretKey};
-use xcss_secret_envelope::EnvelopeDomain;
+use xcss::secret::{SecretBytes, SecretKey};
+use xcss::secret_envelope::EnvelopeDomain;
 
 use crate::error::{AppError, AppResult};
 
-const PREFIX: &str = "sunshine:sgev1:";
+const PREFIX: &str = "xscs:sgev1:";
 const AAD_FORMAT: &[u8] = b"xscs:aes-256-gcm:aad:v1";
 const OPERATION_REQUEST_DOMAIN: &[u8] = b"operation-request";
 const OPERATION_REQUEST_FIELD: &[u8] = b"request_ciphertext";
@@ -95,7 +95,7 @@ impl SecretBox {
     }
 
     fn encrypt<D: EnvelopeDomain>(&self, value: &str, binding: &[u8]) -> AppResult<String> {
-        let payload = xcss_secret_envelope::seal::<D>(
+        let payload = xcss::secret_envelope::seal::<D>(
             &self.current,
             binding,
             &SecretBytes::new(value.as_bytes().to_vec()),
@@ -115,7 +115,7 @@ impl SecretBox {
             return Err(AppError::Crypto);
         }
         let payload = decode_payload(payload)?;
-        let plaintext = xcss_secret_envelope::open::<D>(&self.current, binding, &payload)
+        let plaintext = xcss::secret_envelope::open::<D>(&self.current, binding, &payload)
             .map_err(|_| AppError::Crypto)?;
         String::from_utf8(plaintext.expose().to_vec()).map_err(|_| AppError::Crypto)
     }
@@ -224,6 +224,15 @@ mod tests {
             .encrypt_operation_request("op-a", "sunshine.config.patch", "payload")
             .unwrap();
         assert_ne!(a, b);
+        assert!(a.starts_with("xscs:sgev1:"));
+        // Do not accept a foreign outer prefix as
+        // an alias, even if the authenticated payload uses the current domain.
+        let foreign_namespace = a.replacen("xscs:sgev1:", "foreign:sgev1:", 1);
+        assert!(
+            secret
+                .decrypt_operation_request("op-a", "sunshine.config.patch", &foreign_namespace)
+                .is_err()
+        );
         assert_eq!(
             secret
                 .decrypt_operation_request("op-a", "sunshine.config.patch", &a)

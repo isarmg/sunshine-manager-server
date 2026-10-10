@@ -8,7 +8,7 @@ use std::{
 use anyhow::Context;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
-use xcss_config::{ConfigSource, EnvMapping, EnvValueKind, Override};
+use xcss::config::{ConfigSource, EnvMapping, EnvValueKind, Override};
 
 use crate::crypto::SecretBox;
 
@@ -38,9 +38,9 @@ impl ServeConfig {
         let config = config.map(normalize_config_path).transpose()?;
         let file = config
             .as_deref()
-            .map(xcss_config::read_private_file)
+            .map(xcss::config::read_private_file)
             .transpose()?;
-        let environment = xcss_config::read_environment(&ENVIRONMENT, |name| env::var(name).ok())?;
+        let environment = xcss::config::read_environment(&ENVIRONMENT, |name| env::var(name).ok())?;
         let mut command_line = Vec::new();
         if let Some(path) = data_dir {
             command_line.push(Override::new(
@@ -51,7 +51,7 @@ impl ServeConfig {
         if let Some(bind) = bind {
             command_line.push(Override::new("/bind", bind.to_string()));
         }
-        let loaded = xcss_config::resolve_validated(
+        let loaded = xcss::config::resolve_validated(
             &Settings::default(),
             file.as_deref(),
             &environment,
@@ -67,7 +67,7 @@ impl ServeConfig {
                     .data_dir
                     .as_ref()
                     .context("data_dir or database_url is required")?
-                    .join("sunshine.sqlite3")
+                    .join("xscs.sqlite3")
                     .display()
             ),
         };
@@ -100,7 +100,7 @@ impl ServeConfig {
         }
 
         let bootstrap_admin_username =
-            xcss_admin_auth::normalize_administrator_username(&settings.bootstrap_admin_username)?;
+            xcss::admin_auth::normalize_administrator_username(&settings.bootstrap_admin_username)?;
 
         Ok(Self {
             bind,
@@ -216,7 +216,7 @@ fn validate_static_dir(value: &str, production: bool) -> anyhow::Result<PathBuf>
         root.is_absolute(),
         "development Web directory must be absolute"
     );
-    xcss_web_assets::DirectoryAssets::new(root)?;
+    xcss::web_assets::DirectoryAssets::new(root)?;
     anyhow::ensure!(
         root.join("index.html").is_file() && root.join("assets").is_dir(),
         "development Web directory must contain index.html and assets"
@@ -303,9 +303,9 @@ mod tests {
 fn validate_intrinsic(
     settings: &Settings,
     source: ConfigSource,
-) -> Result<(), xcss_config::ConfigError> {
+) -> Result<(), xcss::config::ConfigError> {
     let invalid =
-        |path| xcss_config::ConfigError::new(xcss_config::Reason::InvalidValue, path, source);
+        |path| xcss::config::ConfigError::new(xcss::config::Reason::InvalidValue, path, source);
     let bind: SocketAddr = settings.bind.parse().map_err(|_| invalid("/bind"))?;
     if !bind.ip().is_loopback() {
         return Err(invalid("/bind"));
@@ -315,10 +315,10 @@ fn validate_intrinsic(
     }
     SecretBox::new(settings.credential_key_id.clone(), [0; 32])
         .map_err(|_| invalid("/credential_key_id"))?;
-    xcss_admin_auth::normalize_administrator_username(&settings.bootstrap_admin_username)
+    xcss::admin_auth::normalize_administrator_username(&settings.bootstrap_admin_username)
         .map_err(|_| invalid("/bootstrap_admin_username"))?;
     if let Some(password) = &settings.bootstrap_admin_password {
-        xcss_admin_auth::validate_password(password)
+        xcss::admin_auth::validate_password(password)
             .map_err(|_| invalid("/bootstrap_admin_password"))?;
     }
     if settings
@@ -349,7 +349,7 @@ mod precedence_contract_tests {
         let file =
             serde_json::to_vec(&serde_json::json!({"credential_key":"private-invalid-secret"}))
                 .unwrap();
-        let error = xcss_config::resolve_validated(
+        let error = xcss::config::resolve_validated(
             &Settings::default(),
             Some(&file),
             &[],
