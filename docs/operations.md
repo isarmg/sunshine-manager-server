@@ -56,14 +56,26 @@ sudo systemctl enable --now xscs.service
 curl --fail http://127.0.0.1:18104/readyz
 ```
 
-就绪响应应为 `{"ready":true}`。通过 HTTPS 反向代理转发到 `127.0.0.1:18104`，使用配置的管理员账号登录；初始化成功后从环境文件移除 `XSCS_BOOTSTRAP_ADMIN_PASSWORD`。客户端须另行安装并配对。
+就绪响应应为 `{"ready":true}`。通过 HTTPS 入口转发到配置的后端地址，使用配置的管理员账号登录；初始化成功后从环境文件移除 `XSCS_BOOTSTRAP_ADMIN_PASSWORD`。客户端须另行安装并配对。
 
 
 ## HTTPS 入口
 
-在同机反向代理配置域名与系统信任的证书，将 HTTPS 请求转发到 `http://127.0.0.1:18104`，保留原始 Host、Origin 与 Sec-Fetch-Site。外部访问使用这个 HTTPS 地址。后台端口保持回环监听。
+每个 xscs 项目实例在一台服务器上运行，程序、SQLite 数据库与状态文件留在该机。其他服务端项目可以部署在其他服务器，由统一入口按各自独立三级域名转发；不拆分 xscs 组件，也不为同一实例配置多机副本。
 
-设备通道 `/xscc/v1/` 还需要 WebSocket Upgrade；代理在自己的 TLS 入口设置 `X-Forwarded-Proto: https`。配置示例见[设备入口](https://github.com/isarmg/xscs/blob/main/deploy/client-ingress.nginx.conf)。代理应保留服务端 JSON 错误与响应状态。Windows Client 的系统信任链来自 LocalSystem 的计算机证书存储。
+HTTPS/WSS 和系统信任的证书由路由或反向代理入口保证。xscs 提供普通 HTTP 后端，不识别代理品牌，也不要求 `X-Forwarded-Proto`。同机入口可使用默认的 `127.0.0.1:18104`；入口在另一台服务器时，将 `XSCS_BIND` 改为 xscs 主机的内网地址，例如 `10.20.0.12:18104`，保留 `XSCS_PRODUCTION=true`，再按配置章节重启服务。后端端口只向受控入口网络开放；跨越不可信网络的回源链路需由部署环境保护。
+
+将一个域名的所有路径原样转发到该后端，保留原始 Host、Origin、Sec-Fetch-Site、Authorization 与响应头、JSON 错误及状态码，支持 `/xscc/v1/` 的 WebSocket Upgrade。不要添加或剥离 URL 路径前缀。浏览器和 Client 均使用这个公网 HTTPS 域名。
+
+例如在统一入口上使用 Caddy，将域名和内网地址替换为实际值：
+
+```caddyfile
+sunshine.example.com {
+    reverse_proxy 10.20.0.12:18104
+}
+```
+
+其他项目各用自己的域名块和后端地址。Caddy 的普通 HTTP 回源保留 Host，并自动处理 WebSocket Upgrade，见[官方 reverse_proxy 文档](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)。完整示例位于 [deploy/Caddyfile](../deploy/Caddyfile)；其他入口遵守上述 HTTP 转发约定即可，[Nginx 设备通道示例](../deploy/client-ingress.nginx.conf)也支持配置内网后端。Windows Client 的系统信任链来自 LocalSystem 的计算机证书存储。
 
 ## 运行检查
 
@@ -73,7 +85,7 @@ sudo journalctl -u xscs.service -n 100 --no-pager
 curl --fail http://127.0.0.1:18104/readyz
 ```
 
-预期服务为 active，`/readyz` 返回 `{"ready":true}`；`/healthz` 的正常状态为 HTTP 204。然后在浏览器打开 HTTPS 地址并登录，创建一个实例，按 [xscc 安装说明](https://github.com/isarmg/xscc/blob/main/docs/platform-setup.md)完成配对。管理台应显示设备在线；读取一次 Sunshine 配置并确认任务返回结果。
+以上 curl 使用默认回环地址；如果修改了 `XSCS_BIND`，请改为配置的内网地址，并从入口主机确认也能访问。预期服务为 active，`/readyz` 返回 `{"ready":true}`；`/healthz` 的正常状态为 HTTP 204。然后在浏览器打开 HTTPS 地址并登录，创建一个实例，按 [xscc 安装说明](https://github.com/isarmg/xscc/blob/main/docs/platform-setup.md)完成配对。管理台应显示设备在线；读取一次 Sunshine 配置并确认任务返回结果。
 
 修改环境文件后执行 `sudo systemctl restart xscs.service`，再检查就绪状态。`XSCS_CREDENTIAL_KEY` 与数据库内密文配套，日常修改密码或实例授权码时保持它不变；替换该密钥会使已有密文不可读。
 

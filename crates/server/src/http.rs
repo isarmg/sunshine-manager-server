@@ -13,7 +13,7 @@ use axum::{
     Json, Router,
     body::{Body, Bytes},
     extract::{
-        ConnectInfo, DefaultBodyLimit, Extension, Request, State,
+        DefaultBodyLimit, Extension, Request, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, StatusCode},
@@ -25,7 +25,6 @@ use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex, Weak},
     time::Duration,
@@ -527,19 +526,12 @@ async fn operation_resolve(
     ))
 }
 
-// Only a local trusted TLS ingress may supply this assertion. The server bind is loopback-only.
-// Reject browser cookies/Origin on the independent device channel.
-fn require_client_ingress(peer: SocketAddr, headers: &HeaderMap) -> AppResult<()> {
-    if !peer.ip().is_loopback()
-        || headers
-            .get("x-forwarded-proto")
-            .and_then(|v| v.to_str().ok())
-            != Some("https")
-        || headers.contains_key("origin")
-        || headers.contains_key("cookie")
-    {
+// TLS is provided by the deployment entry point. Device requests use their own
+// credentials and do not share the browser session channel.
+fn require_client_channel(headers: &HeaderMap) -> AppResult<()> {
+    if headers.contains_key("origin") || headers.contains_key("cookie") {
         return Err(AppError::Forbidden(
-            "Client requires trusted HTTPS/WSS ingress".into(),
+            "Client channel does not accept browser Origin or cookies".into(),
         ));
     }
     Ok(())
@@ -551,11 +543,10 @@ struct PairingRequest {
 }
 async fn resolve_pairing(
     State(state): State<WorkerState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     ContractJson(value): ContractJson<PairingRequest>,
 ) -> AppResult<Response> {
-    require_client_ingress(peer, &headers)?;
+    require_client_channel(&headers)?;
     Ok((
         [("cache-control", "no-store")],
         Json(db::resolve_pairing(&state.pool, &value.authorization_code).await?),
@@ -572,11 +563,10 @@ struct EnrollmentRequest {
 }
 async fn enroll(
     State(state): State<WorkerState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     ContractJson(value): ContractJson<EnrollmentRequest>,
 ) -> AppResult<Response> {
-    require_client_ingress(peer, &headers)?;
+    require_client_channel(&headers)?;
     let binding = db::enroll(
         &state.pool,
         &value.device_id.to_string(),
@@ -589,10 +579,9 @@ async fn enroll(
 }
 async fn client_identity(
     State(state): State<WorkerState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> AppResult<Response> {
-    require_client_ingress(peer, &headers)?;
+    require_client_channel(&headers)?;
     let credential = headers
         .get("authorization")
         .and_then(|h| h.to_str().ok())
@@ -607,11 +596,10 @@ async fn client_identity(
 }
 async fn client_connect(
     State(state): State<WorkerState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     upgrade: WebSocketUpgrade,
 ) -> AppResult<Response> {
-    require_client_ingress(peer, &headers)?;
+    require_client_channel(&headers)?;
     let credential = headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())
@@ -865,11 +853,13 @@ mod tests {
 
     use super::*;
     use axum::body::Body;
+    use axum::extract::ConnectInfo;
     use axum::http::Method;
     use axum::http::{HeaderValue, header};
     use http_body_util::BodyExt;
     use serde_json::Value;
     use sqlx::sqlite::SqlitePoolOptions;
+    use std::net::SocketAddr;
     use tower::ServiceExt;
     use xcss::error::ErrorEnvelope;
 
@@ -1078,6 +1068,103 @@ mod tests {
         }
     }
 
+    #[test]
+    fn device_channel_keeps_browser_requests_separate() {
+        assert!(require_client_channel(&HeaderMap::new()).is_ok());
+        for (name, value) in [
+            (header::ORIGIN, "https://sunshine.example.com"),
+            (header::COOKIE, "browser-session=fixture"),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(name, HeaderValue::from_static(value));
+            assert!(require_client_channel(&headers).is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn device_lifecycle_accepts_a_remote_backend_peer_without_proxy_headers() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        db::initialize_empty(&pool).await.unwrap();
+        let secrets = SecretBox::new("test", [2; 32]).unwrap();
+        let ticket = db::create_device(&pool, &secrets, "remote backend", "admin")
+            .await
+            .unwrap();
+        let state = WorkerState::new(pool, secrets, true, None).unwrap();
+        // Model a different ingress host without opening an external listener.
+        let application = router(state, test_runtime())
+            .unwrap()
+            .layer(Extension(ConnectInfo(SocketAddr::from((
+                [10, 20, 0, 1],
+                42_000,
+            )))));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, application).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let pairing = client
+            .post(format!("{base}{}", xscs_protocol::PAIRING_PATH))
+            .json(&serde_json::json!({"authorization_code": ticket.token}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(pairing.status(), StatusCode::OK);
+        assert_eq!(
+            pairing.json::<Value>().await.unwrap()["device_id"],
+            ticket.device.id
+        );
+
+        let installation = uuid::Uuid::new_v4();
+        let credential = db::random_token();
+        let enrollment = client
+            .post(format!("{base}{}", xscs_protocol::ENROLL_PATH))
+            .json(&serde_json::json!({
+                "device_id": ticket.device.id,
+                "installation_id": installation,
+                "token": ticket.token,
+                "credential": credential,
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(enrollment.status(), StatusCode::OK);
+        let binding = enrollment.json::<Value>().await.unwrap();
+        assert_eq!(binding["device_id"], ticket.device.id);
+        assert_eq!(binding["installation_id"], installation.to_string());
+
+        let identity = client
+            .get(format!("{base}{}", xscs_protocol::IDENTITY_PATH))
+            .bearer_auth(&credential)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(identity.status(), StatusCode::OK);
+        assert_eq!(identity.json::<Value>().await.unwrap(), binding);
+
+        let connection = client
+            .get(format!("{base}{}", xscs_protocol::CONNECT_PATH))
+            .bearer_auth(&credential)
+            .header(header::CONNECTION, "Upgrade")
+            .header(header::UPGRADE, "websocket")
+            .header("sec-websocket-version", "13")
+            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .header("sec-websocket-protocol", WEBSOCKET_SUBPROTOCOL)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(connection.status(), StatusCode::SWITCHING_PROTOCOLS);
+        assert_eq!(
+            connection.headers()["sec-websocket-protocol"],
+            WEBSOCKET_SUBPROTOCOL
+        );
+        drop(connection);
+        server.abort();
+        let _ = server.await;
+    }
+
     #[tokio::test]
     async fn client_websocket_authentication_has_a_distinct_manager_marker() {
         let application = test_router().await;
@@ -1100,7 +1187,7 @@ mod tests {
                 StatusCode::UNAUTHORIZED,
                 true,
             ),
-            (None, None, StatusCode::FORBIDDEN, false),
+            (None, None, StatusCode::UNAUTHORIZED, false),
         ] {
             let mut request = client
                 .get(format!("http://{address}{}", xscs_protocol::CONNECT_PATH))

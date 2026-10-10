@@ -65,7 +65,7 @@ sudo systemctl enable --now xscs.service
 curl --fail http://127.0.0.1:18104/readyz
 ```
 
-就绪响应应为 `{"ready":true}`。通过 HTTPS 反向代理转发到 `127.0.0.1:18104`，使用配置的管理员账号登录；初始化成功后从环境文件移除 `XSCS_BOOTSTRAP_ADMIN_PASSWORD`。客户端须另行安装并配对。
+就绪响应应为 `{"ready":true}`。通过 HTTPS 入口转发到配置的后端地址，使用配置的管理员账号登录；跨服务器部署见[部署手册](docs/operations.md#https-入口)。初始化成功后从环境文件移除 `XSCS_BOOTSTRAP_ADMIN_PASSWORD`。客户端须另行安装并配对。
 
 ## 编译部署
 

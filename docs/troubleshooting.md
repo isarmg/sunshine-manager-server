@@ -7,7 +7,7 @@
 | 服务立即退出 | `sudo journalctl -u xscs.service -n 100 --no-pager` | 按首个错误核对发行目录、环境文件、权限与初始化结果 |
 | `release root must be releases/1.0.0` | 查看发行实体路径和 current 链接 | 使用 `/opt/isarmg/xscs/releases/1.0.0` 及同安装树的绝对 current 链接 |
 | `/healthz` 正常，`/readyz` 返回 503 | 查看运行日志；执行只读 `config validate --json` | 运行依赖全部健康后 ready 才为 true；需要 doctor 时先停服 |
-| 本机就绪，浏览器打不开 | 查看 TLS 代理与本机后端连接 | 公网使用有效 HTTPS，后端转发到回环端口 18104 |
+| 后端就绪，浏览器打不开 | 从入口主机检查配置的后端地址 | 公网使用有效 HTTPS；同机入口可回源回环端口，跨服务器使用配置的内网地址与端口 |
 | 登录失败或 403 | 核对用户名、主机时钟、Host/Origin 和 Cookie | 使用同一 HTTPS 源站；用户名规则见配置参考 |
 | 页面报 `invalid_error_response` | 检查代理返回的状态和 Content-Type | API 错误应保持原始 JSON；修复代理改写 |
 | 页面报 `invalid_response_shape` | 核对服务与内嵌 Web 的发行身份 | 使用同一已验证发行树，按 request ID 排查响应 |

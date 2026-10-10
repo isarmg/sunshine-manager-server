@@ -8,7 +8,7 @@
 |---|---|---|
 | `XSCS_DATABASE_URL` | SQLite URL | 默认安装使用 `sqlite:///var/lib/isarmg/xscs/db/xscs.sqlite3` |
 | `XSCS_DATA_DIR` | 数据目录绝对路径 | 可据此派生数据库路径；数据库须是其直接子文件 |
-| `XSCS_BIND` | `127.0.0.1:18104` | HTTP 后端监听地址 |
+| `XSCS_BIND` | `127.0.0.1:18104` | HTTP 后端监听地址；生产可设为入口能访问的本机内网地址 |
 | `XSCS_PRODUCTION` | `true` | 生产 Session/Cookie 和发行资源策略 |
 | `XSCS_CREDENTIAL_KEY` | 标准 Base64 的 32 个随机字节 | 加密持久授权数据，并派生任务指纹使用的密钥 |
 | `XSCS_CREDENTIAL_KEY_ID` | 与数据库密文相符的 ID | 默认安装设为 `primary` |
@@ -17,6 +17,8 @@
 | `XCSS_DEV_WEB_DIR` | 开发可选绝对目录 | 未绑定源码的开发构建且 production=false 时使用 |
 
 保留 credential key 及 ID 与数据库配套；日常更换管理员密码或实例授权码时保持它们不变。更换主密钥会影响已有密文及任务身份验证。
+
+生产默认使用回环监听；入口在另一台服务器时，例如将 `XSCS_BIND` 设为本机的 `10.20.0.12:18104`，并让入口转发到这个地址。也可显式监听 `0.0.0.0:18104` 或 `[::]:18104`；后端端口只应向受控入口网络开放。`XSCS_PRODUCTION=false` 的 HTTP 开发模式只允许回环地址。服务不配置代理品牌或公网域名，HTTPS/WSS 由路由或反向代理入口保证，示例见[部署手册](operations.md#https-入口)。
 
 ## 管理员与连接
 

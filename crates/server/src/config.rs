@@ -95,9 +95,7 @@ impl ServeConfig {
         let production = settings.production;
         let static_dir =
             development_static_dir(settings.development_web_dir.as_deref(), !production)?;
-        if !bind.ip().is_loopback() {
-            anyhow::bail!("Manager must bind loopback behind a trusted HTTPS/WSS ingress");
-        }
+        validate_bind(bind, production)?;
 
         let bootstrap_admin_username =
             xcss::admin_auth::normalize_administrator_username(&settings.bootstrap_admin_username)?;
@@ -245,9 +243,45 @@ fn decode_key(value: &str) -> anyhow::Result<[u8; 32]> {
         .map_err(|_| anyhow::anyhow!("XSCS_CREDENTIAL_KEY must decode to exactly 32 bytes"))
 }
 
+fn validate_bind(bind: SocketAddr, production: bool) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        production || bind.ip().is_loopback(),
+        "XSCS_PRODUCTION=false requires a loopback XSCS_BIND"
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn production_accepts_configured_backend_addresses_and_preserves_the_default() {
+        assert_eq!(Settings::default().bind, "127.0.0.1:18104");
+        for bind in ["10.20.0.12:18104", "0.0.0.0:18104", "[::]:18104"] {
+            let file = serde_json::to_vec(&serde_json::json!({"bind": bind})).unwrap();
+            let loaded = xcss::config::resolve_validated(
+                &Settings::default(),
+                Some(&file),
+                &[],
+                &[],
+                validate_intrinsic,
+            )
+            .unwrap();
+            assert_eq!(loaded.value.bind, bind);
+            validate_bind(loaded.value.bind.parse().unwrap(), loaded.value.production).unwrap();
+        }
+    }
+
+    #[test]
+    fn development_requires_a_loopback_backend_address() {
+        for bind in ["127.0.0.1:18104", "[::1]:18104"] {
+            validate_bind(bind.parse().unwrap(), false).unwrap();
+        }
+        for bind in ["10.20.0.12:18104", "0.0.0.0:18104", "[::]:18104"] {
+            assert!(validate_bind(bind.parse().unwrap(), false).is_err());
+        }
+    }
 
     #[test]
     fn embedded_assets_need_no_external_directory_and_production_rejects_overrides() {
@@ -306,10 +340,10 @@ fn validate_intrinsic(
 ) -> Result<(), xcss::config::ConfigError> {
     let invalid =
         |path| xcss::config::ConfigError::new(xcss::config::Reason::InvalidValue, path, source);
-    let bind: SocketAddr = settings.bind.parse().map_err(|_| invalid("/bind"))?;
-    if !bind.ip().is_loopback() {
-        return Err(invalid("/bind"));
-    }
+    settings
+        .bind
+        .parse::<SocketAddr>()
+        .map_err(|_| invalid("/bind"))?;
     if let Some(key) = &settings.credential_key {
         decode_key(key).map_err(|_| invalid("/credential_key"))?;
     }
