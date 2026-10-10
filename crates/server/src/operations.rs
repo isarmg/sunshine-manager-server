@@ -180,6 +180,8 @@ pub struct OperationView {
     pub updated_at_micros: i64,
     pub result: Option<Report>,
     pub reconciliation: Option<Report>,
+    /// Receipt time of the reconciliation evidence, unaffected by human resolution.
+    pub reconciliation_observed_at_micros: Option<i64>,
     pub resolution: Option<String>,
     pub status_reason: Option<&'static str>,
 }
@@ -276,12 +278,19 @@ fn operation_list_view(row: OperationListRow) -> AppResult<OperationView> {
         updated_at_micros: row.updated_at_micros,
         result: bounded_report(row.result_payload.as_deref())?,
         reconciliation: bounded_report(row.report_json.as_deref())?,
+        reconciliation_observed_at_micros: row.reconciliation_observed_at_micros,
         resolution: row.resolution_code,
-        status_reason: match row.error_code.as_deref() {
-            Some("authorization_rotated") => Some("authorization_rotated"),
-            _ => None,
-        },
+        status_reason: public_status_reason(row.error_code.as_deref()),
     })
+}
+
+fn public_status_reason(code: Option<&str>) -> Option<&'static str> {
+    // Only product-owned, administrator-facing reasons cross the API boundary.
+    match code {
+        Some("authorization_rotated") => Some("authorization_rotated"),
+        Some("execution_deadline_expired") => Some("execution_deadline_expired"),
+        _ => None,
+    }
 }
 
 #[derive(Serialize)]
@@ -357,6 +366,7 @@ struct OperationListRow {
     updated_at_micros: i64,
     result_payload: Option<Vec<u8>>,
     report_json: Option<Vec<u8>>,
+    reconciliation_observed_at_micros: Option<i64>,
     resolution_code: Option<String>,
     error_code: Option<String>,
     oversized_text: bool,
@@ -769,11 +779,12 @@ impl OperationManager {
         Ok(stored)
     }
     async fn view(&self, stored: StoredOperation) -> AppResult<OperationView> {
-        let reconciliation: Option<String> =
-            sqlx::query_scalar("SELECT report_json FROM client_observations WHERE operation_id=?")
-                .bind(&stored.operation.operation_id)
-                .fetch_optional(&self.pool)
-                .await?;
+        let reconciliation: Option<(String, i64)> = sqlx::query_as(
+            "SELECT report_json,observed_at_micros FROM client_observations WHERE operation_id=?",
+        )
+        .bind(&stored.operation.operation_id)
+        .fetch_optional(&self.pool)
+        .await?;
         Ok(OperationView {
             operation_id: stored.operation.operation_id,
             device_id: stored.operation.target_key,
@@ -790,17 +801,15 @@ impl OperationManager {
                 .transpose()
                 .map_err(internal)?,
             reconciliation: reconciliation
-                .as_deref()
-                .map(serde_json::from_str)
+                .as_ref()
+                .map(|(report, _)| serde_json::from_str(report))
                 .transpose()
                 .map_err(internal)?,
+            reconciliation_observed_at_micros: reconciliation.map(|(_, at)| at),
             resolution: stored.resolution_code,
             // xcss error codes may contain internal diagnostics. Expose
             // only reasons with an explicit administrator-facing meaning.
-            status_reason: match stored.operation.error_code.as_deref() {
-                Some("authorization_rotated") => Some("authorization_rotated"),
-                _ => None,
-            },
+            status_reason: public_status_reason(stored.operation.error_code.as_deref()),
         })
     }
     pub async fn get_for_actor(&self, actor: &str, id: &str) -> AppResult<OperationView> {
@@ -859,6 +868,7 @@ impl OperationManager {
              CASE WHEN length(CAST(op.action AS BLOB))>128 THEN '' ELSE op.action END AS action, \
              CASE WHEN length(CAST(op.state AS BLOB))>128 THEN '' ELSE op.state END AS state,op.attempt, \
              op.created_at_micros,op.updated_at_micros, \
+             obs.observed_at_micros AS reconciliation_observed_at_micros, \
              substr(CAST(op.result_payload AS BLOB),1,?) AS result_payload, \
              substr(CAST(obs.report_json AS BLOB),1,?) AS report_json, \
              CASE WHEN length(CAST(op.resolution_code AS BLOB))>128 THEN '' ELSE op.resolution_code END AS resolution_code, \

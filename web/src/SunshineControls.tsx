@@ -14,10 +14,24 @@ export const sunshineManagementCategories=[
 export type SunshineManagementCategory=typeof sunshineManagementCategories[number]["id"];
 type SunshineControlSection=SunshineManagementCategory|"service"|"moonlight";
 export function isSunshineManagementCategory(value:string):value is SunshineManagementCategory{return sunshineManagementCategories.some(category=>category.id===value)}
-type Props={device:DeviceInfo;operations:Operation[];busy:boolean;blocked:boolean;section:SunshineControlSection|null;submit(command:Command):Promise<boolean>;confirm(value:Confirm):void};
+type Props={device:DeviceInfo;operations:Operation[];busy:boolean;blocked:boolean;section:SunshineControlSection|null;submit(command:Command,onAccepted?:(operation:Operation)=>void):Promise<boolean>;confirm(value:Confirm):void};
 
 const emptyApplication:ApplicationSpec={name:"",output:"",cmd:"","working-dir":"","exclude-global-prep-cmd":false,elevated:false,"auto-detach":false,"wait-all":false,"exit-timeout":5,"prep-cmd":[],detached:[],"image-path":""};
-function latestOf(operations:Operation[],kinds:string[]):Report|undefined{return operations.reduce<{time:number;report:Report}|undefined>((current,operation)=>{const report=operation.result&&kinds.includes(operation.result.kind)?operation.result:operation.reconciliation&&kinds.includes(operation.reconciliation.kind)?operation.reconciliation:undefined;return report&&(!current||operation.updated_at_micros>current.time)?{time:operation.updated_at_micros,report}:current},undefined)?.report}
+function latestOf(operations:Operation[],kinds:string[]):Report|undefined{
+ let latest:{time:number;report:Report}|undefined;
+ for(const operation of operations){
+  // A successful direct result is immutable. A human resolution only changes
+  // the operation timestamp; reconciliation has its own receipt timestamp.
+  for(const [report,time] of [[operation.result,operation.updated_at_micros],[operation.reconciliation,operation.reconciliation_observed_at_micros]] as const){
+   if(report&&kinds.includes(report.kind)&&typeof time==="number"&&Number.isSafeInteger(time)&&(!latest||time>latest.time))latest={time,report};
+  }
+ }
+ return latest?.report;
+}
+function applicationIdentity(value:ApplicationSpec):string{
+ // Match the saved specification without relying on JSON object key ordering.
+ return JSON.stringify([value.name,value.output,value.cmd,value["working-dir"],value["exclude-global-prep-cmd"],value.elevated,value["auto-detach"],value["wait-all"],value["exit-timeout"],value["prep-cmd"].map(command=>[command.do,command.undo,command.elevated]),value.detached,value["image-path"]]);
+}
 function latest(operations:Operation[],kind:string):Report|undefined{return latestOf(operations,[kind])}
 function applications(value:Report|undefined):ApplicationsSnapshot|undefined{const snapshot=value?.snapshot;return snapshot&&"applications" in snapshot?snapshot:undefined}
 function pairedClients(value:Report|undefined):PairedClientsSnapshot|undefined{const snapshot=value?.snapshot;return snapshot&&"clients" in snapshot?snapshot:undefined}
@@ -96,8 +110,36 @@ export function SunshineControls({device,operations,busy,blocked,section,submit,
  const serviceState=latestOf(operations,["service_controlled","service_status_read"])?.state;
  const uploadedCover=latest(operations,"cover_uploaded")?.path;
  const[editing,setEditing]=useState<ApplicationRef|null|undefined>(undefined);const[application,setApplication]=useState<ApplicationSpec>(emptyApplication);const[detachedText,setDetachedText]=useState("");
- function edit(reference:ApplicationRef|null){const value=reference?appSnapshot?.applications.find(value=>value.reference.fingerprint===reference.fingerprint)?.specification??emptyApplication:emptyApplication;setEditing(reference);setApplication(value);setDetachedText(value.detached.join("\n"))}
- async function saveApplication(event:FormEvent<HTMLFormElement>){event.preventDefault();if(!appSnapshot)return;const value={...application,detached:detachedText.split("\n").map(line=>line.trim()).filter(Boolean)};if(value.detached.length>16)return;const command:Command={kind:"save_application",expected_revision:appSnapshot.revision,target:editing??null,application:value,administrator_confirmed_host_commands:appHasHostCommands(value)};if(appHasHostCommands(value))confirm({title:t("确认保存主机命令", "Confirm host commands"),description:t("应用的启动、准备或分离命令会在 Sunshine 主机上执行程序。", "Application launch, preparation or detached commands execute programs on the Sunshine host."),run:()=>submit(command)});else await submit(command)}
+ const editorGeneration=useRef(0);const submitting=useRef(false);
+ const[submission,setSubmission]=useState<{operation:Operation;application:ApplicationSpec;generation:number}|null>(null);
+ const submittedOperation=submission&&(operations.find(operation=>operation.operation_id===submission.operation.operation_id&&operation.updated_at_micros>=submission.operation.updated_at_micros)??submission.operation);
+ // Keep submit disabled through the success render until its new target is adopted.
+ const applicationPending=!!submittedOperation&&["pending","running","unknown","succeeded"].includes(submittedOperation.state);
+ useEffect(()=>{
+  if(!submission||!submittedOperation||submission.generation!==editorGeneration.current)return;
+  if(submittedOperation.state!=="succeeded"||submittedOperation.result?.kind!=="application_saved")return;
+  const snapshot=applications(submittedOperation.result);
+  const matches=snapshot?.applications.filter(value=>applicationIdentity(value.specification)===applicationIdentity(submission.application));
+  if(matches?.length!==1)return;
+  // Rebase the identity only. Text edited while execution was pending belongs
+  // to the user and must survive this earlier save's completion.
+  setEditing(matches[0].reference);setSubmission(null);
+ },[submission,submittedOperation]);
+ function edit(reference:ApplicationRef|null){editorGeneration.current+=1;setSubmission(null);const value=reference?appSnapshot?.applications.find(value=>value.reference.fingerprint===reference.fingerprint)?.specification??emptyApplication:emptyApplication;setEditing(reference);setApplication(value);setDetachedText(value.detached.join("\n"))}
+ function cancelApplication(){editorGeneration.current+=1;setSubmission(null);setEditing(undefined)}
+ async function saveApplication(event:FormEvent<HTMLFormElement>){
+  event.preventDefault();if(!appSnapshot||blocked||applicationPending||submitting.current)return;
+  const value={...application,detached:detachedText.split("\n").map(line=>line.trim()).filter(Boolean)};if(value.detached.length>16)return;
+  const generation=editorGeneration.current;
+  const command:Command={kind:"save_application",expected_revision:appSnapshot.revision,target:editing??null,application:value,administrator_confirmed_host_commands:appHasHostCommands(value)};
+  const save=async()=>{
+   if(generation!==editorGeneration.current||submitting.current)return false;
+   submitting.current=true;
+   try{return await submit(command,operation=>{if(generation===editorGeneration.current)setSubmission({operation,application:value,generation})})}
+   finally{submitting.current=false}
+  };
+  if(appHasHostCommands(value))confirm({title:t("确认保存主机命令", "Confirm host commands"),description:t("应用的启动、准备或分离命令会在 Sunshine 主机上执行程序。", "Application launch, preparation or detached commands execute programs on the Sunshine host."),run:save});else await save();
+ }
  const sectionLabel=section==="service"?t("Sunshine 服务", "Sunshine service"):section==="moonlight"?t("Moonlight 配对", "Moonlight pairing"):sunshineManagementCategories.find(category=>category.id===section)?.label;
  if(!caps||caps.protocol!=="xscs-management/1")return section?<section id={section==="moonlight"?"sunshine-moonlight-pairing":`sunshine-${section}`} className="xcss-content-panel" aria-label={sectionLabel}><p>{t("客户端尚未上报当前协议 能力。升级并重新连接客户端后可使用应用、配对、诊断和服务控制。", "The client has not reported the current protocol capabilities. Upgrade and reconnect it to use applications, pairing, diagnostics and service controls.")}</p></section>:null;
  const sectionAvailable=section==="applications"?caps.application_management:section==="diagnostics"?caps.diagnostics:section==="maintenance"?caps.maintenance:section==="service"?caps.service_control:true;
@@ -106,7 +148,7 @@ export function SunshineControls({device,operations,busy,blocked,section,submit,
  {section&&!sectionAvailable&&<section id={`sunshine-${section}`} className="xcss-content-panel" aria-label={sectionLabel}><p>{t("客户端尚未启用此项管理能力。", "This management capability is not enabled on the client.")}</p></section>}
  {caps.application_management&&<section id="sunshine-applications" className="xcss-content-panel sunshine-management-panel" hidden={section!=="applications"} aria-label={t("应用管理", "Applications")}><header className="sunshine-section-header"><div className="xcss-actions"><Button disabled={busy} onClick={()=>void submit({kind:"list_applications"})}>{t("刷新应用", "Refresh applications")}</Button><Button disabled={blocked||!appSnapshot} onClick={()=>edit(null)}>{t("新建应用", "New application")}</Button><Button disabled={blocked} onClick={()=>confirm({title:t("关闭当前应用", "Close current application"),description:t("这只会调用 Sunshine 关闭当前应用，可能中断活动串流。", "This asks Sunshine to close its current application and may interrupt an active stream."),run:()=>submit({kind:"close_application",administrator_confirmed:true})})}>{t("关闭当前应用", "Close current application")}</Button></div></header>
  {!appSnapshot?<p>{t("刷新应用列表后，可新建或编辑应用。", "Refresh the application list to create or edit applications.")}</p>:!appSnapshot.applications.length?<p className="sunshine-muted">{t("暂无应用，可以新建应用。", "No applications yet. Create an application to get started.")}</p>:<div className="sunshine-management-list">{appSnapshot.applications.map(value=><article className="sunshine-management-row" key={value.reference.fingerprint}><div className="sunshine-row-summary"><h3>{value.specification.name}</h3><p>{value.specification.cmd||t("无启动命令", "No launch command")}</p></div><div className="xcss-actions"><Button disabled={blocked} onClick={()=>edit(value.reference)}>{t("编辑", "Edit")}</Button><Button className="sunshine-danger-action" disabled={blocked} onClick={()=>confirm({title:t("删除应用", "Delete application"),description:t("删除会按当前列表修订和应用内容引用重新核对目标。", "Deletion rechecks the target using the current list revision and content reference."),run:()=>submit({kind:"delete_application",expected_revision:appSnapshot.revision,target:value.reference,administrator_confirmed:true})})}>{t("删除", "Delete")}</Button></div></article>)}</div>}
- {editing!==undefined&&appSnapshot&&<ApplicationEditor application={application} setApplication={setApplication} detachedText={detachedText} setDetachedText={setDetachedText} editing={editing!==null} blocked={blocked} onSubmit={event=>void saveApplication(event)} onCancel={()=>setEditing(undefined)}/>}
+ {editing!==undefined&&appSnapshot&&<ApplicationEditor application={application} setApplication={setApplication} detachedText={detachedText} setDetachedText={setDetachedText} editing={editing!==null} blocked={blocked||applicationPending} onSubmit={event=>void saveApplication(event)} onCancel={cancelApplication}/>}
  <form className="sunshine-cover-form" onSubmit={event=>{event.preventDefault();const data=new FormData(event.currentTarget);const file=data.get("cover");const key=String(data.get("cover_key")??"").trim();const input=event.currentTarget.elements.namedItem("cover");if(!(file instanceof File)||!file.size)return;if(file.size>30*1024||file.type!=="image/png"){if(input instanceof HTMLInputElement){input.setCustomValidity(t("封面必须是 30 KiB 以内的 PNG。", "The cover must be a PNG no larger than 30 KiB."));input.reportValidity()}return}if(input instanceof HTMLInputElement)input.setCustomValidity("");void fileBase64(file).then(png_base64=>submit({kind:"upload_cover",key,png_base64,administrator_confirmed:true}))}}><h3>{t("上传封面", "Upload cover")}</h3><p className="sunshine-muted">{t("PNG 格式，最大 30 KiB。", "PNG format, up to 30 KiB.")}</p><div className="sunshine-upload-fields"><FormField label={t("封面键", "Cover key")}><TextField name="cover_key" required pattern="[A-Za-z0-9._-]{1,64}"/></FormField><FormField label={t("PNG 封面", "PNG cover")}><input name="cover" className="sunshine-file-input" type="file" accept="image/png" required onChange={event=>event.currentTarget.setCustomValidity("")}/></FormField><Button type="submit" disabled={blocked}>{t("上传 PNG", "Upload PNG")}</Button></div>{uploadedCover&&<p>{t("已保存路径：", "Saved path: ")}<code>{uploadedCover}</code></p>}</form>
  </section>}
  {section==="diagnostics"&&caps.diagnostics&&<section id="sunshine-diagnostics" className="xcss-content-panel" aria-label={t("诊断与 Sunshine 日志", "Diagnostics and Sunshine logs")}><p>{t("这里读取的是本机 Sunshine 日志；管理操作记录位于“日志”页面。日志按字节游标分页并在客户端脱敏。", "This reads local Sunshine logs. Manager operation records are on the Logs page. Logs use byte cursors and are redacted by the client.")}</p><div className="xcss-actions"><Button disabled={busy} onClick={()=>void submit({kind:"read_logs",cursor:null,limit_bytes:16384})}>{t("读取最新日志", "Read latest logs")}</Button><Button disabled={busy||!logPage?.previous} onClick={()=>{if(logPage?.previous)void submit({kind:"read_logs",cursor:logPage.previous,limit_bytes:16384})}}>{t("读取上一页", "Read previous page")}</Button><Button disabled={busy} onClick={()=>void submit({kind:"read_diagnostics"})}>{t("读取诊断", "Read diagnostics")}</Button><Button disabled={busy} onClick={()=>void submit({kind:"read_virtual_input_status"})}>{t("查询虚拟输入", "Read virtual input status")}</Button></div>{logPage&&<pre className="sunshine-logs">{logPage.text||t("此页没有日志内容", "This page has no log content")}</pre>}{diagnostic&&<dl><dt>{t("API 可达", "API reachable")}</dt><dd>{String(diagnostic.api_reachable)}</dd><dt>{t("认证通过", "Authentication accepted")}</dt><dd>{String(diagnostic.authentication_accepted)}</dd><dt>{t("Sunshine 版本", "Sunshine version")}</dt><dd>{diagnostic.sunshine_version??t("未知", "Unknown")}</dd><dt>{t("平台", "Platform")}</dt><dd>{diagnostic.platform??t("未知", "Unknown")}</dd><dt>{t("服务状态", "Service state")}</dt><dd>{diagnostic.service_state}</dd></dl>}{virtualStatus&&<p>{t("VirtualHID", "VirtualHID")}: {virtualStatus.virtualhid.installed?t("已安装", "installed"):t("未安装", "not installed")} · ViGEmBus: {virtualStatus.vigembus.installed?t("已安装", "installed"):t("未安装", "not installed")}</p>}</section>}

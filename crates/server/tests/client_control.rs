@@ -998,6 +998,14 @@ async fn stale_restart_authorization_expires_before_delivery() {
         state,
         ("failed".into(), Some("execution_deadline_expired".into()))
     );
+    let view = ops
+        .get_for_actor("admin", &queued.operation_id)
+        .await
+        .unwrap();
+    assert_eq!(view.status_reason, Some("execution_deadline_expired"));
+    assert!(view.result.is_none());
+    let recent = ops.recent_for_actor("admin", &id).await.unwrap();
+    assert_eq!(recent[0].status_reason, Some("execution_deadline_expired"));
 }
 
 #[tokio::test]
@@ -1410,4 +1418,126 @@ async fn oversized_stored_history_text_fails_closed_without_blocking_other_insta
             .len(),
         1
     );
+}
+
+#[tokio::test]
+async fn reconciliation_receipt_time_survives_human_resolution_and_replayed_results() {
+    use xscs_protocol::{ServiceAction, ServiceState};
+    let (_dir, pool) = database().await;
+    let (id, _) = registered(&pool).await;
+    let ops = manager(&pool);
+    let accepted = ops
+        .enqueue(
+            "admin",
+            &id,
+            "old-service-restart",
+            Command::ControlService {
+                action: ServiceAction::Restart,
+                administrator_confirmed: true,
+            },
+        )
+        .await
+        .unwrap();
+    session(&pool, &id, "s1").await;
+    let claim = ops.next(&id, "s1").await.unwrap().unwrap();
+    ops.disconnected(&claim).await.unwrap();
+    let unknown = ops
+        .store
+        .get(&accepted.operation_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let report = Report::ServiceControlled {
+        action: ServiceAction::Restart,
+        state: ServiceState::Running,
+    };
+    ops.complete(&unknown, "s1", report.clone()).await.unwrap();
+    let observed = ops
+        .get_for_actor("admin", &accepted.operation_id)
+        .await
+        .unwrap();
+    let receipt = observed.reconciliation_observed_at_micros.unwrap();
+    assert_eq!(observed.reconciliation, Some(report.clone()));
+    let recent = ops.recent_for_actor("admin", &id).await.unwrap();
+    assert_eq!(recent[0].reconciliation_observed_at_micros, Some(receipt));
+    // Receiving the same evidence again is not a new observation.
+    ops.complete(&unknown, "s1", report).await.unwrap();
+    assert_eq!(
+        ops.get_for_actor("admin", &accepted.operation_id)
+            .await
+            .unwrap()
+            .reconciliation_observed_at_micros,
+        Some(receipt)
+    );
+    let read = ops
+        .enqueue(
+            "admin",
+            &id,
+            "later-service-read",
+            Command::ReadServiceStatus {},
+        )
+        .await
+        .unwrap();
+    let read_claim = ops.next(&id, "s1").await.unwrap().unwrap();
+    assert_eq!(read_claim.operation.operation_id, read.operation_id);
+    ops.complete(
+        &read_claim,
+        "s1",
+        Report::ServiceStatusRead {
+            state: ServiceState::Stopped,
+        },
+    )
+    .await
+    .unwrap();
+    let later = ops
+        .get_for_actor("admin", &read.operation_id)
+        .await
+        .unwrap();
+    assert!(later.updated_at_micros >= receipt);
+    let resolved = ops
+        .resolve_for_actor(
+            "admin",
+            &accepted.operation_id,
+            xcss::operations::Resolution::ConfirmedSucceeded,
+        )
+        .await
+        .unwrap();
+    assert!(resolved.updated_at_micros >= later.updated_at_micros);
+    assert_eq!(resolved.reconciliation_observed_at_micros, Some(receipt));
+    assert_eq!(resolved.state, OperationState::Resolved);
+    let history = ops.recent_for_actor("admin", &id).await.unwrap();
+    let row = history
+        .iter()
+        .find(|row| row.operation_id == accepted.operation_id)
+        .unwrap();
+    assert_eq!(row.reconciliation_observed_at_micros, Some(receipt));
+    assert_eq!(row.updated_at_micros, resolved.updated_at_micros);
+}
+
+#[tokio::test]
+async fn read_dispatch_deadline_matches_documented_bounded_lifetime() {
+    let (_dir, pool) = database().await;
+    let (id, _) = registered(&pool).await;
+    let ops = manager(&pool);
+    let read = ops
+        .enqueue("admin", &id, "offline-read", Command::ReadConfig {})
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE _common_operations SET created_at_micros=created_at_micros-? WHERE operation_id=?",
+    )
+    .bind(16_i64 * 60 * 1_000_000)
+    .bind(&read.operation_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    session(&pool, &id, "s1").await;
+    assert!(ops.next(&id, "s1").await.unwrap().is_none());
+    let expired = ops
+        .get_for_actor("admin", &read.operation_id)
+        .await
+        .unwrap();
+    assert_eq!(expired.status_reason, Some("execution_deadline_expired"));
+    assert_eq!(expired.state, OperationState::Failed);
+    assert!(expired.result.is_none());
 }

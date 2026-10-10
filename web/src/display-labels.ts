@@ -10,6 +10,7 @@ const labels: Record<string, readonly [string, string]> = {
   permission_denied: ["权限不足", "Permission denied"], operation_id_reused: ["操作标识被不同内容复用", "Operation ID reused with different content"],
   unsupported_version: ["版本不受支持", "Unsupported version"], unsafe_configuration: ["配置不安全", "Unsafe configuration"],
   sunshine_unavailable: ["Sunshine 不可访问", "Sunshine unavailable"], journal_full: ["执行日志已满", "Execution journal full"],
+  execution_deadline_expired: ["任务投递期限已过，未执行", "Task dispatch deadline expired without execution"],
   execution_expired: ["任务已过期，未执行", "Task expired without execution"], result_too_large: ["执行结果超出传输上限", "Execution result exceeds the message limit"], operation_already_completed: ["操作已收存，不重复执行", "Operation already accepted; no reexecution"],
   no_execution_record: ["没有可核对的执行记录", "No execution record"], effect_not_confirmed: ["生效状态未确认", "Effect not confirmed"],
   restart_not_confirmed: ["重启结果未确认", "Restart not confirmed"], persistence_failure: ["执行记录保存失败", "Execution record persistence failed"],

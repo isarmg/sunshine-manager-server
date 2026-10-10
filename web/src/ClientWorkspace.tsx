@@ -85,13 +85,14 @@ export function ClientWorkspace({device,fieldDefinitions,refreshSignal,configRef
  function randomAuthorizationCode(){const alphabet="abcdefghijklmnopqrstuvwxyz0123456789";let result="";while(result.length<36){for(const value of crypto.getRandomValues(new Uint8Array(64))){if(value<252)result+=alphabet[value%alphabet.length];if(result.length===36)break}}return result}
  const readActions=new Set(["sunshine.config.read","sunshine.applications.list","sunshine.pairing.clients.list","sunshine.pairing.pending.list","sunshine.logs.read","sunshine.diagnostics.read","sunshine.virtual_input.read","sunshine.service.read"]);
  function isReadCommand(command:Command){return ["read_config","list_applications","list_paired_clients","list_pending_pairings","read_logs","read_diagnostics","read_virtual_input_status","read_service_status"].includes(command.kind)}
- async function submit(command:Command):Promise<boolean>{
+ async function submit(command:Command,onAccepted?:(operation:Operation)=>void):Promise<boolean>{
   const readOnly=isReadCommand(command);
   if(!readOnly&&blocked)return false;
   const generation=configurationGeneration.current;
   const body=JSON.stringify(command);const key=idempotencyKeys.current.get(body)??crypto.randomUUID();idempotencyKeys.current.set(body,key);
   return perform(async()=>{
    const operation=await client.request(base+"/tasks",isOperation,{method:"POST",headers:{"Idempotency-Key":key},body});
+   onAccepted?.(operation);
    idempotencyKeys.current.delete(body);operationRevision.current+=1;setOperations(values=>[operation,...values.filter(value=>value.operation_id!==operation.operation_id)].slice(0,50));
    if(generation===configurationGeneration.current){
     if(isConfigurationCommand(command))setConfigActivity({command:command.kind,operation});
