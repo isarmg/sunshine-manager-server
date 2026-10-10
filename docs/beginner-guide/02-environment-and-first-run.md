@@ -6,7 +6,8 @@ bootstrap 管理员密码和 loopback bind。使用 `config/xscs.env.example`，
 先通过 xcss `xcss-build-server --config xcss-web-build.json --mode development` 构建 Web、Rust 并验证二进制资源清单，再运行 Rust 检查。Server 启动后检查 `/healthz`、`/readyz` 和管理员登录。创建一个测试实例，
 再在隔离主机运行独立 xscc 完成配对；不要把开发 Client 指向已有生产 Sunshine。
 
-常见失败分层：Server TLS/Origin、实例授权码或已轮换、Client WSS ingress、Client 本地证书验证、
-Sunshine 认证、配置 revision 冲突。Server 无法替 Client 验证本机 Sunshine 密码。
+常见失败分层：远程 Server TLS 证书链/主机名或 Origin、实例授权码或已轮换、Client WSS ingress、
+本机 Sunshine 回环 HTTPS 连接或认证、条件配置更新的 revision 冲突。Sunshine 的回环连接不校验证书身份；
+远程 Manager 连接仍执行标准证书验证。Server 无法替 Client 验证本机 Sunshine 密码。
 
 开发可显式设置绝对 `XCSS_DEV_WEB_DIR` 配合 `PRODUCTION=false`，重新构建 Web 后无需重编译 Rust；生产拒绝目录资源，使用内嵌资源与精确绑定的 `web-assets.json`。

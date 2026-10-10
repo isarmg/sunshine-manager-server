@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # xcss packages such as xcss-platform-db are intentional
+          # xcss the xcss package are intentional
           # build-time dependencies. This gate rejects the retired runtime
           # container/plugin coupling only.
           coupling_pattern='UNION_|X-Union-|PluginManifest|ProcessContext|@unionc|unionc_'
