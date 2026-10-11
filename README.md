@@ -65,11 +65,13 @@ sudo systemctl enable --now xscs.service
 curl --fail http://127.0.0.1:18104/readyz
 ```
 
-就绪响应应为 `{"ready":true}`。通过 HTTPS 入口转发到配置的后端地址，使用配置的管理员账号登录；跨服务器部署见[部署手册](docs/operations.md#https-入口)。初始化成功后从环境文件移除 `XSCS_BOOTSTRAP_ADMIN_PASSWORD`。客户端须另行安装并配对。
+就绪响应应为 `{"ready":true}`。通过 HTTPS 入口转发到配置的后端地址，使用配置的管理员账号登录；跨服务器部署见详细文档中的部署手册。初始化成功后从环境文件移除 `XSCS_BOOTSTRAP_ADMIN_PASSWORD`。客户端须另行安装并配对。
 
 ## 编译部署
 
 在 Linux AMD64 GNU 主机准备 Git、Rust `1.99.0`、Node.js `26.7.0`、npm、Python `3.11+` 和 C 编译工具。从干净源码、与版本号一致且精确指向 HEAD 的 annotated tag 构建发行包；输出目录必须已存在、位于仓库外且不含同名制品：
+
+以下命令复现已发布的 v1.0.0，不包含 main 的后续修复。当前源码构建见详细文档中的开发指南；正式打包需要对应版本标签。
 
 ```sh
 git clone https://github.com/isarmg/xscs.git

@@ -75,7 +75,7 @@ sunshine.example.com {
 }
 ```
 
-其他项目各用自己的域名块和后端地址。Caddy 的普通 HTTP 回源保留 Host，并自动处理 WebSocket Upgrade，见[官方 reverse_proxy 文档](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)。完整示例位于 [deploy/Caddyfile](../deploy/Caddyfile)；其他入口遵守上述 HTTP 转发约定即可，[Nginx 设备通道示例](../deploy/client-ingress.nginx.conf)也支持配置内网后端。Windows Client 的系统信任链来自 LocalSystem 的计算机证书存储。
+其他项目各用自己的域名块和后端地址。Caddy 的普通 HTTP 回源保留 Host，并自动处理 WebSocket Upgrade，见[官方 reverse_proxy 文档](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)。完整示例位于 [deploy/Caddyfile](https://github.com/isarmg/xscs/blob/main/deploy/Caddyfile)；其他入口遵守上述 HTTP 转发约定即可，[Nginx 设备通道示例](https://github.com/isarmg/xscs/blob/main/deploy/client-ingress.nginx.conf)也支持配置内网后端。Windows Client 的系统信任链来自 LocalSystem 的计算机证书存储。
 
 ## 运行检查
 
