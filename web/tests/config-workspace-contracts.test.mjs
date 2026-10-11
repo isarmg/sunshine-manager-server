@@ -40,8 +40,9 @@ function fixture({readRevision="a",readPending=false}={}){
  const refresh=async()=>{host.props={...host.props,refreshSignal:host.props.refreshSignal+1};host.render();await settle()};
  const setQp=value=>find(node=>node.type==='input'&&node.props.id==='sunshine-field-qp').props.onChange({target:{value}});
  const complete=()=>{const save=operations.find(value=>value.action==='sunshine.config.save');save.state='succeeded';save.result={kind:'config_saved',snapshot:snapshot('b','29')};save.updated_at_micros=++clock};
+ const reconcile=(resolution,report={kind:'config_saved',snapshot:snapshot('b','29')})=>{const save=operations.find(value=>value.action==='sunshine.config.save');save.state=resolution===null?'unknown':'resolved';save.result={kind:'unknown',reason:'effect_not_confirmed'};save.reconciliation=report;save.resolution=resolution;save.reconciliation_observed_at_micros=++clock;save.updated_at_micros=++clock};
  const confirm=()=>find(node=>node.type==='confirm');
- return {host,commands,button,setQp,settle,refresh,complete,confirm};
+ return {host,commands,button,setQp,settle,refresh,complete,reconcile,confirm};
 }
 test('restart immediately after a confirmed save uses its revision before device polling catches up',async()=>{
  const f=fixture();f.host.render();await f.settle();await f.refresh();f.button('General').props.onClick();f.setQp('29');f.button('Apply changes').props.onClick();await f.settle();f.complete();await f.refresh();
@@ -63,4 +64,37 @@ test('restart uses the freshly read baseline while unsaved field edits remain on
 test('a cached device snapshot alone cannot enable configuration restart before the requested read',async()=>{
  const f=fixture({readPending:true});f.host.render();await f.settle();await f.refresh();f.button('General').props.onClick();
  assert.equal(f.button('Restart Sunshine').props.disabled,true);assert.equal(f.commands.filter(command=>command.kind==='restart').length,0);
+});
+
+
+test('confirmed successful recovery rebases restart while preserving subsequent draft edits',async()=>{
+ const f=fixture();f.host.render();await f.settle();await f.refresh();f.button('General').props.onClick();f.setQp('29');f.button('Apply changes').props.onClick();await f.settle();
+ f.setQp('31');f.reconcile(null);await f.refresh();
+ assert.equal(f.button('Restart Sunshine').props.disabled,true);
+ f.reconcile('confirmed_succeeded');await f.refresh();
+ assert.equal(walk(f.host.render(),node=>node.type==='input'&&node.props.id==='sunshine-field-qp')[0].props.value,'31');
+ f.button('Restart Sunshine').props.onClick();await f.confirm().props.onConfirm();await f.settle();
+ assert.equal(f.commands.at(-1).kind,'restart');assert.equal(f.commands.at(-1).expected_revision,'b'.repeat(64));
+});
+
+test('successful reconciliation clears the submitted change from the preview',async()=>{
+ const f=fixture();f.host.render();await f.settle();await f.refresh();f.button('General').props.onClick();f.setQp('29');f.button('Apply changes').props.onClick();await f.settle();
+ f.reconcile('confirmed_succeeded');await f.refresh();
+ assert.equal(f.button('Apply changes'),undefined);
+ assert.equal(walk(f.host.render(),node=>node.type==='input'&&node.props.id==='sunshine-field-qp')[0].props.value,'29');
+});
+
+for(const [label,resolution,report] of [
+ ['failed resolution','confirmed_failed',undefined],
+ ['unconfirmed resolution','unable_to_confirm',undefined],
+ ['missing evidence','confirmed_succeeded',null],
+ ['wrong evidence kind','confirmed_succeeded',{kind:'config_read',snapshot:snapshot('b','29')}],
+ ['invalid snapshot','confirmed_succeeded',{kind:'config_saved',snapshot:{revision:'invalid'}}],
+])test(`${label} does not adopt a recovered configuration`,async()=>{
+ const f=fixture();f.host.render();await f.settle();await f.refresh();f.button('General').props.onClick();f.setQp('29');f.button('Apply changes').props.onClick();await f.settle();
+ f.reconcile(resolution,report);await f.refresh();
+ assert.equal(f.button('Apply changes').props.disabled,false);
+ f.button('Restart Sunshine').props.onClick();await f.confirm().props.onConfirm();await f.settle();
+ assert.equal(f.commands.at(-1).expected_revision,'a'.repeat(64));
+ assert.equal(walk(f.host.render(),node=>node.type==='input'&&node.props.id==='sunshine-field-qp')[0].props.value,'29');
 });

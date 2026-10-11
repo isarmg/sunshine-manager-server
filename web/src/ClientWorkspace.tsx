@@ -112,8 +112,9 @@ export function ClientWorkspace({device,fieldDefinitions,refreshSignal,configRef
  useEffect(()=>{
   if(!submittedConfiguration||!submittedOperation)return;
   const operation=submittedOperation;
-  if(operation.device_id!==device.id||operation.action!=="sunshine.config.save"||operation.state!=="succeeded"||operation.result?.kind!=="config_saved"||!isSnapshot(operation.result.snapshot))return;
-  const snapshot=operation.result.snapshot;
+  const report=operation.state==="succeeded"?operation.result:operation.state==="resolved"&&operation.resolution==="confirmed_succeeded"?operation.reconciliation:undefined;
+  if(operation.device_id!==device.id||operation.action!=="sunshine.config.save"||report?.kind!=="config_saved"||!isSnapshot(report.snapshot))return;
+  const snapshot=report.snapshot;
   const nextDraft={...draft};const nextRemove=new Set(remove);
   // A successful receipt confirms only the submitted draft. Preserve edits made while it ran.
   for(const key of new Set([...Object.keys(draft),...Object.keys(snapshot.fields),...Object.keys(submittedConfiguration.draft),...remove])){
